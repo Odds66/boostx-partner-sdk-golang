@@ -17,14 +17,16 @@ import (
 type (
 	Identity         = tokens.Identity
 	GamePass         = tokens.GamePass
+	GamePassParams   = tokens.GamePassParams
 	Boost            = tokens.Boost
 	RegisteredClaims = tokens.RegisteredClaims
 )
 
 // Handler interfaces for key and bet storage.
 type (
-	KeyStore = handlers.KeyStore
-	BetStore = handlers.BetStore
+	KeyStore        = handlers.KeyStore
+	BetStoreUpdater = handlers.BetStoreUpdater
+	BetStoreChecker = handlers.BetStoreChecker
 )
 
 // Sentinel errors for token parsing and validation.
@@ -39,9 +41,10 @@ var (
 	ErrInvalidClaim      = tokens.ErrInvalidClaim
 )
 
-// MountHandlers registers checkBet, getBet, and setBoost handlers on mux at prefix.
-// Uses static keys for token verification. Returns error if either key is nil.
-func MountHandlers(mux *http.ServeMux, prefix string, store BetStore, gamepassPubKey, boostPubKey *ecdsa.PublicKey) error {
+// MountHandlers registers handlers on mux at prefix. The /setBoost endpoint is
+// always registered. The /checkBet endpoint is registered only if store implements
+// BetStoreChecker. Uses static keys for token verification. Returns error if either key is nil.
+func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gamepassPubKey, boostPubKey *ecdsa.PublicKey) error {
 	keyStore, err := keys.NewStaticKeyStore(gamepassPubKey, boostPubKey)
 	if err != nil {
 		return err
@@ -51,21 +54,11 @@ func MountHandlers(mux *http.ServeMux, prefix string, store BetStore, gamepassPu
 }
 
 // MountHandlersWithKeyStorage mounts handlers with a custom KeyStore for multi-tenant scenarios.
-func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore BetStore, keyStore KeyStore) {
+func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
 	handlers.Mount(mux, prefix, betStore, keyStore)
 }
 
 // CreateGamePassToken creates a signed GamePass JWT for testing purposes.
-func CreateGamePassToken(
-	privateKey *ecdsa.PrivateKey,
-	partner string,
-	user string,
-	bet string,
-	amount float64,
-	currency string,
-	x float64,
-	xmin float64,
-	xmax float64,
-) (string, error) {
-	return tokens.CreateGamePassToken(privateKey, partner, user, bet, amount, currency, x, xmin, xmax)
+func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (string, error) {
+	return tokens.CreateGamePassToken(privateKey, params)
 }

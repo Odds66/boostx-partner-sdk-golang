@@ -2,7 +2,7 @@
 //
 // This example demonstrates:
 // - Loading keys from files (or generating test keys)
-// - Implementing BetStore interface
+// - Implementing BetStoreUpdater interface
 // - Mounting handlers on a mux
 // - Running the server
 //
@@ -12,9 +12,9 @@
 //
 // Test with curl:
 //
-//	curl -X POST http://localhost:8080/api/boostx/checkBet \
+//	curl -X POST http://localhost:8080/api/boostx/setBoost \
 //	  -H "Content-Type: application/json" \
-//	  -d '{"identityJWT": "..."}'
+//	  -d '{"boostJWT": "..."}'
 package main
 
 import (
@@ -26,7 +26,6 @@ import (
 	"log"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx"
 )
@@ -41,14 +40,7 @@ func main() {
 
 	// Add a sample bet for testing
 	sampleBet := &StoredBet{
-		BetID: "bet-789",
-		Info: &boostx.BetInfo{
-			BetTimestamp:   time.Now().Unix(),
-			EventName:      "Real Madrid vs Barcelona",
-			EventMarket:    "Match Winner",
-			EventSelection: "Real Madrid",
-			Result:         nil, // Not played yet
-		},
+		BetID:  "bet-789",
 		Active: true,
 	}
 	betStore.bets["bet-789"] = sampleBet
@@ -61,17 +53,19 @@ func main() {
 
 	// Add a test endpoint to create GamePass tokens
 	mux.HandleFunc("/api/test/gamepass", func(w http.ResponseWriter, r *http.Request) {
-		token, err := boostx.CreateGamePassToken(
-			partnerPrivateKey,
-			"partner-123",
-			"user-456",
-			"bet-789",
-			100.0,
-			"USD",
-			2.0,
-			1.1,
-			10.0,
-		)
+		token, err := boostx.CreateGamePassToken(partnerPrivateKey, boostx.GamePassParams{
+			Partner:        "partner-123",
+			User:           "user-456",
+			Bet:            "bet-789",
+			Amount:         100.0,
+			Currency:       "USD",
+			X:              2.0,
+			XMin:           1.1,
+			XMax:           10.0,
+			EventName:      "Real Madrid vs Barcelona",
+			EventMarket:    "Match Winner",
+			EventSelection: "Real Madrid",
+		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -84,8 +78,7 @@ func main() {
 	addr := ":8080"
 	fmt.Printf("Starting server on %s\n", addr)
 	fmt.Println("Endpoints:")
-	fmt.Println("  POST /api/boostx/checkBet  - Check if bet is active")
-	fmt.Println("  POST /api/boostx/getBet    - Get bet information")
+	fmt.Println("  POST /api/boostx/checkBet  - Check if bet is active (optional)")
 	fmt.Println("  POST /api/boostx/setBoost  - Receive boost update")
 	fmt.Println("  GET  /api/test/gamepass    - Generate test GamePass token")
 	fmt.Println()
@@ -105,12 +98,11 @@ func generateTestKeyPair(name string) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 // StoredBet represents a bet stored in the bet store.
 type StoredBet struct {
 	BetID  string
-	Info   *boostx.BetInfo
 	Active bool
 	Boost  *boostx.Boost
 }
 
-// MemoryBetStore is a simple in-memory implementation of BetStore.
+// MemoryBetStore is a simple in-memory implementation of BetStoreUpdater.
 type MemoryBetStore struct {
 	mu   sync.RWMutex
 	bets map[string]*StoredBet
@@ -124,6 +116,8 @@ func NewMemoryBetStore() *MemoryBetStore {
 }
 
 // CheckBet returns true if bet is active.
+// Implementing BetStoreChecker is optional — the /checkBet endpoint is only
+// registered when the BetStoreUpdater also implements this method.
 func (s *MemoryBetStore) CheckBet(ctx context.Context, identity *boostx.Identity) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -133,18 +127,6 @@ func (s *MemoryBetStore) CheckBet(ctx context.Context, identity *boostx.Identity
 		return false, nil
 	}
 	return bet.Active, nil
-}
-
-// GetBet returns bet info and optional result.
-func (s *MemoryBetStore) GetBet(ctx context.Context, identity *boostx.Identity) (*boostx.BetInfo, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	bet, ok := s.bets[identity.Bet]
-	if !ok {
-		return nil, nil
-	}
-	return bet.Info, nil
 }
 
 // SetBoost stores the boost update.

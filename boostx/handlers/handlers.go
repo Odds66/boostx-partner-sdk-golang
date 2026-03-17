@@ -26,11 +26,13 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: message})
 }
 
-// Mount registers all handlers on the given mux at the specified prefix.
-// Example: Mount(mux, "/api/boostx", keys, store) registers /api/boostx/checkBet, etc.
-func Mount(mux *http.ServeMux, prefix string, betStore BetStore, keyStore KeyStore) {
+// Mount registers handlers on the given mux at the specified prefix.
+// The /setBoost endpoint is always registered.
+// The /checkBet endpoint is registered only if betStore implements BetStoreChecker.
+func Mount(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
 	prefix = strings.TrimSuffix(prefix, "/")
-	mux.Handle(prefix+"/checkBet", NewCheckBetHandler(betStore, keyStore))
-	mux.Handle(prefix+"/getBet", NewGetBetHandler(betStore, keyStore))
+	if cbs, ok := betStore.(BetStoreChecker); ok {
+		mux.Handle(prefix+"/checkBet", NewCheckBetHandler(cbs, keyStore))
+	}
 	mux.Handle(prefix+"/setBoost", NewSetBoostHandler(betStore, keyStore))
 }

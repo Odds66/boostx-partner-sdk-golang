@@ -36,30 +36,35 @@ func main() {
 }
 ```
 
-## Implementing BetStore
+## Implementing BetStoreUpdater
 
-Partners must implement the `BetStore` interface:
+Partners must implement the `BetStoreUpdater` interface:
 
 ```go
-type BetStore interface {
-    CheckBet(ctx context.Context, identity *boostx.Identity) (active bool, err error)
-    GetBet(ctx context.Context, identity *boostx.Identity) (*boostx.BetInfo, error)
+type BetStoreUpdater interface {
     SetBoost(ctx context.Context, boost *boostx.Boost) error
 }
 ```
 
-- **CheckBet** - Returns true if the bet is active and eligible for boosting
-- **GetBet** - Returns bet information and optional result
 - **SetBoost** - Stores the boost update from BoostX
 
-See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/boostx) for detailed type documentation (`GamePass`, `Boost`, `BetInfo`).
+To enable the optional `/checkBet` endpoint, also implement `BetStoreChecker`:
+
+```go
+type BetStoreChecker interface {
+    CheckBet(ctx context.Context, identity *boostx.Identity) (active bool, err error)
+}
+```
+
+- **CheckBet** - Returns true if the bet is active and eligible for boosting. This endpoint is only called by BoostX when enabled for your integration (disabled by default).
+
+See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/boostx) for detailed type documentation (`GamePass`, `Boost`).
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `{prefix}/checkBet` | POST | Check if a bet is active |
-| `{prefix}/getBet` | POST | Get bet information |
+| `{prefix}/checkBet` | POST | Check if a bet is active *(optional, requires BetStoreChecker)* |
 | `{prefix}/setBoost` | POST | Receive boost updates |
 
 ## Error Handling
@@ -91,11 +96,19 @@ publicKey, err := boostx.LoadPublicKeyFromPEM(pemBytes)
 For testing, partners can create GamePass tokens:
 
 ```go
-token, err := boostx.CreateGamePassToken(
-    privateKey, "partner-id", "user-id", "bet-id",
-    100.0, "USD",  // amount, currency
-    2.0, 1.1, 10.0, // odds (x, xmin, xmax)
-)
+token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
+    Partner:        "partner-id",
+    User:           "user-id",
+    Bet:            "bet-id",
+    Amount:         100.0,
+    Currency:       "USD",
+    X:              2.0,
+    XMin:           1.1,
+    XMax:           10.0,
+    EventName:      "Real Madrid vs Barcelona",  // optional
+    EventMarket:    "Match Winner",               // optional
+    EventSelection: "Real Madrid",                // optional
+})
 ```
 
 ### Custom Key Storage

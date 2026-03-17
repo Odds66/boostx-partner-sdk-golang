@@ -9,17 +9,16 @@ import (
 func TestCreateGamePassToken(t *testing.T) {
 	privateKey, publicKey := generateTestKey(t)
 
-	token, err := CreateGamePassToken(
-		privateKey,
-		"partner-123",
-		"user-456",
-		"bet-789",
-		100.0,
-		"USD",
-		2.0,
-		1.1,
-		10.0,
-	)
+	token, err := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner-123",
+		User:     "user-456",
+		Bet:      "bet-789",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
 	if err != nil {
 		t.Fatalf("CreateGamePassToken failed: %v", err)
 	}
@@ -63,18 +62,68 @@ func TestCreateGamePassToken(t *testing.T) {
 	}
 }
 
+func TestCreateGamePassToken_EventFields(t *testing.T) {
+	privateKey, publicKey := generateTestKey(t)
+
+	token, err := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:        "partner-123",
+		User:           "user-456",
+		Bet:            "bet-789",
+		Amount:         100.0,
+		Currency:       "USD",
+		X:              2.0,
+		XMin:           1.1,
+		XMax:           10.0,
+		EventName:      "Real Madrid vs Barcelona",
+		EventMarket:    "Match Winner",
+		EventSelection: "Real Madrid",
+	})
+	if err != nil {
+		t.Fatalf("CreateGamePassToken failed: %v", err)
+	}
+
+	gamePass, err := ParseGamePassToken(token, publicKey)
+	if err != nil {
+		t.Fatalf("ParseGamePassToken failed: %v", err)
+	}
+
+	if gamePass.EventName != "Real Madrid vs Barcelona" {
+		t.Errorf("expected event_name=%q, got %q", "Real Madrid vs Barcelona", gamePass.EventName)
+	}
+	if gamePass.EventMarket != "Match Winner" {
+		t.Errorf("expected event_market=%q, got %q", "Match Winner", gamePass.EventMarket)
+	}
+	if gamePass.EventSelection != "Real Madrid" {
+		t.Errorf("expected event_selection=%q, got %q", "Real Madrid", gamePass.EventSelection)
+	}
+
+	// Also verify via ExtractGamePassClaims
+	extracted, err := ExtractGamePassClaims(token)
+	if err != nil {
+		t.Fatalf("ExtractGamePassClaims failed: %v", err)
+	}
+	if extracted.EventName != "Real Madrid vs Barcelona" {
+		t.Errorf("extract: expected event_name=%q, got %q", "Real Madrid vs Barcelona", extracted.EventName)
+	}
+	if extracted.EventMarket != "Match Winner" {
+		t.Errorf("extract: expected event_market=%q, got %q", "Match Winner", extracted.EventMarket)
+	}
+	if extracted.EventSelection != "Real Madrid" {
+		t.Errorf("extract: expected event_selection=%q, got %q", "Real Madrid", extracted.EventSelection)
+	}
+}
+
 func TestCreateGamePassToken_NilPrivateKey(t *testing.T) {
-	_, err := CreateGamePassToken(
-		nil,
-		"partner-123",
-		"user-456",
-		"bet-789",
-		100.0,
-		"USD",
-		2.0,
-		1.1,
-		10.0,
-	)
+	_, err := CreateGamePassToken(nil, GamePassParams{
+		Partner:  "partner-123",
+		User:     "user-456",
+		Bet:      "bet-789",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
 	if !errors.Is(err, ErrInvalidPrivateKey) {
 		t.Errorf("expected ErrInvalidPrivateKey, got %v", err)
 	}
@@ -97,17 +146,16 @@ func TestCreateGamePassToken_MissingClaims(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := CreateGamePassToken(
-				privateKey,
-				tc.partner,
-				tc.user,
-				tc.bet,
-				100.0,
-				"USD",
-				2.0,
-				1.1,
-				10.0,
-			)
+			_, err := CreateGamePassToken(privateKey, GamePassParams{
+				Partner:  tc.partner,
+				User:     tc.user,
+				Bet:      tc.bet,
+				Amount:   100.0,
+				Currency: "USD",
+				X:        2.0,
+				XMin:     1.1,
+				XMax:     10.0,
+			})
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("expected %v, got %v", tc.wantErr, err)
 			}
@@ -137,17 +185,16 @@ func TestCreateGamePassToken_InvalidFloatValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := CreateGamePassToken(
-				privateKey,
-				"partner",
-				"user",
-				"bet",
-				tc.amount,
-				"USD",
-				tc.x,
-				tc.xmin,
-				tc.xmax,
-			)
+			_, err := CreateGamePassToken(privateKey, GamePassParams{
+				Partner:  "partner",
+				User:     "user",
+				Bet:      "bet",
+				Amount:   tc.amount,
+				Currency: "USD",
+				X:        tc.x,
+				XMin:     tc.xmin,
+				XMax:     tc.xmax,
+			})
 			if !errors.Is(err, ErrInvalidClaim) {
 				t.Errorf("expected ErrInvalidClaim, got %v", err)
 			}
@@ -158,17 +205,16 @@ func TestCreateGamePassToken_InvalidFloatValues(t *testing.T) {
 func TestParseGamePassToken_NilPublicKey(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 
-	token, _ := CreateGamePassToken(
-		privateKey,
-		"partner",
-		"user",
-		"bet",
-		100.0,
-		"USD",
-		2.0,
-		1.1,
-		10.0,
-	)
+	token, _ := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner",
+		User:     "user",
+		Bet:      "bet",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
 
 	_, err := ParseGamePassToken(token, nil)
 	if !errors.Is(err, ErrInvalidPublicKey) {
@@ -180,17 +226,16 @@ func TestParseGamePassToken_InvalidSignature(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 	_, wrongPublicKey := generateTestKey(t)
 
-	token, _ := CreateGamePassToken(
-		privateKey,
-		"partner",
-		"user",
-		"bet",
-		100.0,
-		"USD",
-		2.0,
-		1.1,
-		10.0,
-	)
+	token, _ := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner",
+		User:     "user",
+		Bet:      "bet",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
 
 	_, err := ParseGamePassToken(token, wrongPublicKey)
 	if !errors.Is(err, ErrInvalidSignature) {
@@ -201,17 +246,16 @@ func TestParseGamePassToken_InvalidSignature(t *testing.T) {
 func TestExtractGamePassClaims(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 
-	token, _ := CreateGamePassToken(
-		privateKey,
-		"partner-123",
-		"user-456",
-		"bet-789",
-		100.0,
-		"USD",
-		2.0,
-		1.1,
-		10.0,
-	)
+	token, _ := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner-123",
+		User:     "user-456",
+		Bet:      "bet-789",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
 
 	claims, err := ExtractGamePassClaims(token)
 	if err != nil {

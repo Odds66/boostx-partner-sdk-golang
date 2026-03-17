@@ -10,11 +10,11 @@ import (
 // SetBoostHandler handles POST /setBoost requests.
 type SetBoostHandler struct {
 	keys  KeyStore
-	store BetStore
+	store BetStoreUpdater
 }
 
 // NewSetBoostHandler creates a new SetBoostHandler.
-func NewSetBoostHandler(store BetStore, keys KeyStore) *SetBoostHandler {
+func NewSetBoostHandler(store BetStoreUpdater, keys KeyStore) *SetBoostHandler {
 	return &SetBoostHandler{keys: keys, store: store}
 }
 
@@ -68,5 +68,5 @@ func (h *SetBoostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, struct{}{})
+	w.WriteHeader(http.StatusOK)
 }

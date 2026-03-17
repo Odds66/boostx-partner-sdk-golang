@@ -10,11 +10,11 @@ import (
 // CheckBetHandler handles POST /checkBet requests.
 type CheckBetHandler struct {
 	keys  KeyStore
-	store BetStore
+	store BetStoreChecker
 }
 
 // NewCheckBetHandler creates a new CheckBetHandler.
-func NewCheckBetHandler(store BetStore, keys KeyStore) *CheckBetHandler {
+func NewCheckBetHandler(store BetStoreChecker, keys KeyStore) *CheckBetHandler {
 	return &CheckBetHandler{keys: keys, store: store}
 }
 
