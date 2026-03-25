@@ -57,8 +57,8 @@ func TestCreateGamePassToken(t *testing.T) {
 	if gamePass.XMax != 10.0 {
 		t.Errorf("expected xmax=%v, got %v", 10.0, gamePass.XMax)
 	}
-	if gamePass.IdentityJWT == "" {
-		t.Error("expected non-empty IdentityJWT")
+	if gamePass.Signature == "" {
+		t.Error("expected non-empty GID signature")
 	}
 }
 

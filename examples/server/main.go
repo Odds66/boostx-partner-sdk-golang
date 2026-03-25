@@ -14,7 +14,7 @@
 //
 //	curl -X POST http://localhost:8080/api/boostx/setBoost \
 //	  -H "Content-Type: application/json" \
-//	  -d '{"boostJWT": "..."}'
+//	  -d '{"boosterJWT": "..."}'
 package main
 
 import (
@@ -97,9 +97,9 @@ func generateTestKeyPair(name string) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 
 // StoredBet represents a bet stored in the bet store.
 type StoredBet struct {
-	BetID  string
-	Active bool
-	Boost  *boostx.Boost
+	BetID   string
+	Active  bool
+	Booster *boostx.Booster
 }
 
 // MemoryBetStore is a simple in-memory implementation of BetStoreUpdater.
@@ -118,11 +118,11 @@ func NewMemoryBetStore() *MemoryBetStore {
 // CheckBet returns true if bet is active.
 // Implementing BetStoreChecker is optional — the /checkBet endpoint is only
 // registered when the BetStoreUpdater also implements this method.
-func (s *MemoryBetStore) CheckBet(ctx context.Context, identity *boostx.Identity) (bool, error) {
+func (s *MemoryBetStore) CheckBet(ctx context.Context, gid *boostx.GID) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	bet, ok := s.bets[identity.Bet]
+	bet, ok := s.bets[gid.Bet]
 	if !ok {
 		return false, nil
 	}
@@ -130,18 +130,18 @@ func (s *MemoryBetStore) CheckBet(ctx context.Context, identity *boostx.Identity
 }
 
 // SetBoost stores the boost update.
-func (s *MemoryBetStore) SetBoost(ctx context.Context, boost *boostx.Boost) error {
+func (s *MemoryBetStore) SetBoost(ctx context.Context, booster *boostx.Booster) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	bet, ok := s.bets[boost.Bet]
+	bet, ok := s.bets[booster.Bet]
 	if !ok {
-		return fmt.Errorf("bet not found: %s", boost.Bet)
+		return fmt.Errorf("bet not found: %s", booster.Bet)
 	}
 
-	bet.Boost = boost
+	bet.Booster = booster
 	fmt.Printf("Stored boost for bet %s: round=%d, boost=%.2f, final=%v\n",
-		boost.Bet, boost.Round, boost.Boost, boost.Final)
+		booster.Bet, booster.Round, booster.Boost, booster.Final)
 
 	return nil
 }

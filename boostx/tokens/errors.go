@@ -8,10 +8,12 @@ var (
 	ErrInvalidPublicKey  = errors.New("invalid ECDSA public key")
 
 	// Token errors
-	ErrInvalidGamePass  = errors.New("invalid GamePass token")
-	ErrInvalidBoost     = errors.New("invalid Boost token")
-	ErrInvalidIdentity  = errors.New("invalid Identity token")
-	ErrInvalidSignature = errors.New("invalid token signature")
-	ErrMissingClaim     = errors.New("missing required claim")
-	ErrInvalidClaim     = errors.New("invalid claim value")
+	ErrInvalidGamePass   = errors.New("invalid GamePass token")
+	ErrInvalidBooster    = errors.New("invalid Booster token")
+	ErrInvalidCheckBet   = errors.New("invalid CheckBet token")
+	ErrInvalidSettlement = errors.New("invalid Settlement token")
+	ErrInvalidGID        = errors.New("invalid GID")
+	ErrInvalidSignature  = errors.New("invalid token signature")
+	ErrMissingClaim      = errors.New("missing required claim")
+	ErrInvalidClaim      = errors.New("invalid claim value")
 )

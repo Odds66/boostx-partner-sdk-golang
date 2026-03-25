@@ -11,16 +11,15 @@ import (
 // GamePass represents the parsed claims from a GamePass JWT token.
 // This token is created by the Partner and sent to BoostX.
 type GamePass struct {
-	Identity               // Embedded identity fields (Partner, User, Bet)
-	IdentityJWT    string  `json:"-"`                         // Raw identity sub-token string
-	Amount         float64 `json:"amount"`                    // Bet amount
-	Currency       string  `json:"currency"`                  // Currency code (e.g., "USD", "EUR")
-	X              float64 `json:"x"`                         // Current coefficient
-	XMin           float64 `json:"xmin"`                      // Minimum coefficient
-	XMax           float64 `json:"xmax"`                      // Maximum coefficient
-	EventName      string  `json:"event_name,omitempty"`      // Optional event name
-	EventMarket    string  `json:"event_market,omitempty"`    // Optional event market
-	EventSelection string  `json:"event_selection,omitempty"` // Optional event selection
+	GID                          // Embedded GID fields (Partner, User, Bet, Signature)
+	Amount         float64       // Stake amount
+	Currency       string        // Currency code (e.g., "USD", "EUR")
+	X              float64       // Initial coefficient (xrange.init)
+	XMin           float64       // Minimum coefficient (xrange.min)
+	XMax           float64       // Maximum coefficient (xrange.max)
+	EventName      string        // Optional event name
+	EventMarket    string        // Optional event market
+	EventSelection string        // Optional event selection
 	RegisteredClaims
 }
 
@@ -39,22 +38,39 @@ type GamePassParams struct {
 	EventSelection string // optional
 }
 
-// gamePassClaims is the JWT payload for the outer gamepass token.
+// Internal serialization types for the nested JWT payload.
+
+type stakeClaims struct {
+	Amount   float64 `json:"amount"`
+	Currency string  `json:"currency"`
+}
+
+type xRangeClaims struct {
+	Init float64 `json:"init"`
+	Min  float64 `json:"min"`
+	Max  float64 `json:"max"`
+}
+
+type eventClaims struct {
+	Name      string `json:"name"`
+	Market    string `json:"market"`
+	Selection string `json:"selection"`
+}
+
+type gamePassPayload struct {
+	GID    GID          `json:"gid"`
+	Stake  stakeClaims  `json:"stake"`
+	XRange xRangeClaims `json:"xrange"`
+	Event  *eventClaims `json:"event,omitempty"`
+}
+
 type gamePassClaims struct {
-	IdentityJWT    string  `json:"identity"`
-	Amount         float64 `json:"amount"`
-	Currency       string  `json:"currency"`
-	X              float64 `json:"x"`
-	XMin           float64 `json:"xmin"`
-	XMax           float64 `json:"xmax"`
-	EventName      string  `json:"event_name,omitempty"`
-	EventMarket    string  `json:"event_market,omitempty"`
-	EventSelection string  `json:"event_selection,omitempty"`
+	GamePass gamePassPayload `json:"gamepass"`
 	RegisteredClaims
 }
 
 // CreateGamePassToken creates a new GamePass JWT token signed with the partner's private key.
-// It first creates an identity sub-token (no iat), then embeds it in the outer gamepass token.
+// It builds a GID, then embeds it in the nested gamepass payload.
 func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (string, error) {
 	if privateKey == nil {
 		return "", ErrInvalidPrivateKey
@@ -69,6 +85,9 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 	}
 	if params.Bet == "" {
 		return "", fmt.Errorf("%w: bet", ErrMissingClaim)
+	}
+	if params.Currency == "" {
+		return "", fmt.Errorf("%w: currency", ErrMissingClaim)
 	}
 
 	// Validate numeric fields
@@ -85,26 +104,37 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 		return "", fmt.Errorf("%w: xmax", ErrInvalidClaim)
 	}
 
-	// Sign identity sub-token (no iat)
-	identityJWT, err := SignIdentityJWT(params.Partner, params.User, params.Bet, privateKey)
+	// Build GID
+	gid, err := BuildGID(params.Partner, params.User, params.Bet, privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign identity token: %w", err)
+		return "", fmt.Errorf("failed to build GID: %w", err)
 	}
 
-	// Sign outer gamepass token
+	// Build claims
 	claims := gamePassClaims{
-		IdentityJWT:    identityJWT,
-		Amount:         params.Amount,
-		Currency:       params.Currency,
-		X:              params.X,
-		XMin:           params.XMin,
-		XMax:           params.XMax,
-		EventName:      params.EventName,
-		EventMarket:    params.EventMarket,
-		EventSelection: params.EventSelection,
+		GamePass: gamePassPayload{
+			GID: *gid,
+			Stake: stakeClaims{
+				Amount:   params.Amount,
+				Currency: params.Currency,
+			},
+			XRange: xRangeClaims{
+				Init: params.X,
+				Min:  params.XMin,
+				Max:  params.XMax,
+			},
+		},
 		RegisteredClaims: RegisteredClaims{
 			IssuedAt: time.Now().Unix(),
 		},
+	}
+
+	if params.EventName != "" || params.EventMarket != "" || params.EventSelection != "" {
+		claims.GamePass.Event = &eventClaims{
+			Name:      params.EventName,
+			Market:    params.EventMarket,
+			Selection: params.EventSelection,
+		}
 	}
 
 	return SignJWT(claims, privateKey)
@@ -118,32 +148,37 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidGamePass, err)
 	}
 
-	if claims.IdentityJWT == "" {
-		return nil, fmt.Errorf("%w: identity", ErrMissingClaim)
+	gp := &claims.GamePass
+	if gp.GID.Partner == "" {
+		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
 	}
 
-	// Extract identity claims without verification
-	identity, err := ExtractIdentityClaims(claims.IdentityJWT)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract identity: %w", err)
+	var eventName, eventMarket, eventSelection string
+	if gp.Event != nil {
+		eventName = gp.Event.Name
+		eventMarket = gp.Event.Market
+		eventSelection = gp.Event.Selection
 	}
 
 	return &GamePass{
-		Identity:       *identity,
-		IdentityJWT:    claims.IdentityJWT,
-		Amount:         claims.Amount,
-		Currency:       claims.Currency,
-		X:              claims.X,
-		XMin:           claims.XMin,
-		XMax:           claims.XMax,
-		EventName:      claims.EventName,
-		EventMarket:    claims.EventMarket,
-		EventSelection: claims.EventSelection,
+		GID:              gp.GID,
+		Amount:           gp.Stake.Amount,
+		Currency:         gp.Stake.Currency,
+		X:                gp.XRange.Init,
+		XMin:             gp.XRange.Min,
+		XMax:             gp.XRange.Max,
+		EventName:        eventName,
+		EventMarket:      eventMarket,
+		EventSelection:   eventSelection,
+		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
 }
 
 // ParseGamePassToken parses and validates a GamePass JWT token,
-// including verification of the embedded identity sub-token.
+// including verification of the embedded GID signature.
+// A single key is used because the partner signs both the outer JWT and the GID.
+// This differs from ParseBoosterToken/ParseCheckBetToken where BoostX signs the
+// JWT but the partner signed the GID, requiring two separate keys.
 func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePass, error) {
 	if publicKey == nil {
 		return nil, ErrInvalidPublicKey
@@ -157,27 +192,33 @@ func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePa
 		return nil, fmt.Errorf("%w: %v", ErrInvalidGamePass, err)
 	}
 
-	if claims.IdentityJWT == "" {
-		return nil, fmt.Errorf("%w: identity", ErrMissingClaim)
+	gp := &claims.GamePass
+	if gp.GID.Partner == "" {
+		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
 	}
 
-	// Verify identity sub-token with same key
-	identity, err := ParseIdentityJWT(claims.IdentityJWT, publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse identity token: %w", err)
+	// Verify GID signature with same key
+	if err := VerifyGID(&gp.GID, publicKey); err != nil {
+		return nil, fmt.Errorf("failed to verify GID: %w", err)
+	}
+
+	var eventName, eventMarket, eventSelection string
+	if gp.Event != nil {
+		eventName = gp.Event.Name
+		eventMarket = gp.Event.Market
+		eventSelection = gp.Event.Selection
 	}
 
 	return &GamePass{
-		Identity:         *identity,
-		IdentityJWT:      claims.IdentityJWT,
-		Amount:           claims.Amount,
-		Currency:         claims.Currency,
-		X:                claims.X,
-		XMin:             claims.XMin,
-		XMax:             claims.XMax,
-		EventName:        claims.EventName,
-		EventMarket:      claims.EventMarket,
-		EventSelection:   claims.EventSelection,
+		GID:              gp.GID,
+		Amount:           gp.Stake.Amount,
+		Currency:         gp.Stake.Currency,
+		X:                gp.XRange.Init,
+		XMin:             gp.XRange.Min,
+		XMax:             gp.XRange.Max,
+		EventName:        eventName,
+		EventMarket:      eventMarket,
+		EventSelection:   eventSelection,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
 }

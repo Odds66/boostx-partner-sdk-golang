@@ -20,7 +20,7 @@ func NewCheckBetHandler(store BetStoreChecker, keys KeyStore) *CheckBetHandler {
 
 // checkBetRequest is the request body for POST /checkBet.
 type checkBetRequest struct {
-	IdentityJWT string `json:"identityJWT"`
+	CheckBetJWT string `json:"checkbetJWT"`
 }
 
 // checkBetResponse is the response body for POST /checkBet.
@@ -28,7 +28,7 @@ type checkBetResponse struct {
 	Active bool `json:"active"`
 }
 
-// ServeHTTP validates identityJWT and checks if bet is active.
+// ServeHTTP validates checkbetJWT and checks if bet is active.
 func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -44,25 +44,32 @@ func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract claims without verification to get key lookup params
-	unverified, err := tokens.ExtractIdentityClaims(req.IdentityJWT)
+	partner, user, bet, err := tokens.ExtractCheckBetClaims(req.CheckBetJWT)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid identity token")
+		writeError(w, http.StatusBadRequest, "invalid checkbet token")
 		return
 	}
 
-	gamepassPubKey, err := h.keys.GamePassPublicKey(r.Context(), unverified.Partner, unverified.User, unverified.Bet)
+	boosterPubKey, err := h.keys.BoosterPublicKey(r.Context(), partner, user, bet)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get booster key")
+		return
+	}
+
+	// GamePass key is the partner's key — used to verify the GID signature
+	partnerPubKey, err := h.keys.GamePassPublicKey(r.Context(), partner, user, bet)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get gamepass key")
 		return
 	}
 
-	identity, err := tokens.ParseIdentityJWT(req.IdentityJWT, gamepassPubKey)
+	checkBet, err := tokens.ParseCheckBetToken(req.CheckBetJWT, boosterPubKey, partnerPubKey)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid identity token")
+		writeError(w, http.StatusBadRequest, "invalid checkbet token")
 		return
 	}
 
-	active, err := h.store.CheckBet(r.Context(), identity)
+	active, err := h.store.CheckBet(r.Context(), &checkBet.GID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to check bet")
 		return

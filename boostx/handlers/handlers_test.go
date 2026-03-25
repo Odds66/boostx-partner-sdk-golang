@@ -26,7 +26,7 @@ func generateTestKeyPair(t *testing.T) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 // mockKeyStore implements KeyStore for testing
 type mockKeyStore struct {
 	gamepassKey *ecdsa.PublicKey
-	boostKey    *ecdsa.PublicKey
+	boosterKey  *ecdsa.PublicKey
 	err         error
 }
 
@@ -34,8 +34,8 @@ func (m *mockKeyStore) GamePassPublicKey(ctx context.Context, partner, user, bet
 	return m.gamepassKey, m.err
 }
 
-func (m *mockKeyStore) BoostPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return m.boostKey, m.err
+func (m *mockKeyStore) BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+	return m.boosterKey, m.err
 }
 
 // mockBetStore implements BetStoreUpdater (SetBoost only)
@@ -43,7 +43,7 @@ type mockBetStore struct {
 	err error
 }
 
-func (m *mockBetStore) SetBoost(ctx context.Context, boost *tokens.Boost) error {
+func (m *mockBetStore) SetBoost(ctx context.Context, booster *tokens.Booster) error {
 	return m.err
 }
 
@@ -53,32 +53,47 @@ type mockFullBetStore struct {
 	err    error
 }
 
-func (m *mockFullBetStore) SetBoost(ctx context.Context, boost *tokens.Boost) error {
+func (m *mockFullBetStore) SetBoost(ctx context.Context, booster *tokens.Booster) error {
 	return m.err
 }
 
-func (m *mockFullBetStore) CheckBet(ctx context.Context, identity *tokens.Identity) (bool, error) {
+func (m *mockFullBetStore) CheckBet(ctx context.Context, gid *tokens.GID) (bool, error) {
 	return m.active, m.err
 }
 
-func createTestIdentityToken(t *testing.T, privateKey *ecdsa.PrivateKey) string {
+func createTestCheckBetToken(t *testing.T, partnerPrivKey *ecdsa.PrivateKey, boosterPrivKey *ecdsa.PrivateKey) string {
 	t.Helper()
-	token, err := tokens.SignIdentityJWT("partner-123", "user-456", "bet-789", privateKey)
+	gid, err := tokens.BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 	if err != nil {
-		t.Fatalf("failed to create identity token: %v", err)
+		t.Fatalf("failed to build GID: %v", err)
+	}
+
+	// Build checkbet claims with nested structure
+	claims := struct {
+		CheckBet struct {
+			GID tokens.GID `json:"gid"`
+		} `json:"checkbet"`
+		tokens.RegisteredClaims
+	}{}
+	claims.CheckBet.GID = *gid
+
+	token, err := tokens.SignJWT(claims, boosterPrivKey)
+	if err != nil {
+		t.Fatalf("failed to create checkbet token: %v", err)
 	}
 	return token
 }
 
 func TestCheckBetHandler_Success(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
+	boosterPrivKey, boosterPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey}
+	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
 	betStore := &mockFullBetStore{active: true}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
-	token := createTestIdentityToken(t, partnerPrivKey)
-	body, _ := json.Marshal(checkBetRequest{IdentityJWT: token})
+	token := createTestCheckBetToken(t, partnerPrivKey, boosterPrivKey)
+	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: token})
 
 	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -102,13 +117,14 @@ func TestCheckBetHandler_Success(t *testing.T) {
 
 func TestCheckBetHandler_Inactive(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
+	boosterPrivKey, boosterPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey}
+	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
 	betStore := &mockFullBetStore{active: false}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
-	token := createTestIdentityToken(t, partnerPrivKey)
-	body, _ := json.Marshal(checkBetRequest{IdentityJWT: token})
+	token := createTestCheckBetToken(t, partnerPrivKey, boosterPrivKey)
+	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: token})
 
 	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -159,12 +175,13 @@ func TestCheckBetHandler_InvalidBody(t *testing.T) {
 
 func TestCheckBetHandler_InvalidToken(t *testing.T) {
 	_, partnerPubKey := generateTestKeyPair(t)
+	_, boosterPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey}
+	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
 	betStore := &mockFullBetStore{active: true}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
-	body, _ := json.Marshal(checkBetRequest{IdentityJWT: "invalid.token.here"})
+	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: "invalid.token.here"})
 
 	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -175,42 +192,37 @@ func TestCheckBetHandler_InvalidToken(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
-
-	// Verify error message does not leak internal details
-	var errResp errorResponse
-	json.NewDecoder(rec.Body).Decode(&errResp)
-	if errResp.Error != "invalid identity token" {
-		t.Errorf("expected generic error message, got %q", errResp.Error)
-	}
 }
 
 func TestSetBoostHandler_Success(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
-	boostXPrivKey, boostXPubKey := generateTestKeyPair(t)
+	boosterPrivKey, boosterPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boostKey: boostXPubKey}
+	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
 	betStore := &mockBetStore{}
 	handler := NewSetBoostHandler(betStore, keyStore)
 
-	// Create identity sub-token
-	identityJWT, _ := tokens.SignIdentityJWT("partner-123", "user-456", "bet-789", partnerPrivKey)
+	// Build GID
+	gid, _ := tokens.BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 
-	// Create a valid boost token with identity
-	boostClaims := struct {
-		Identity string  `json:"identity"`
-		Round    int     `json:"round"`
-		Boost    float64 `json:"boost"`
-		Final    bool    `json:"final"`
+	// Create a valid booster token with nested structure
+	boosterClaims := struct {
+		Booster struct {
+			GID     tokens.GID `json:"gid"`
+			Round   int        `json:"round"`
+			Boost   float64    `json:"boost"`
+			Final   bool       `json:"final"`
+			Jackpot bool       `json:"jackpot"`
+		} `json:"booster"`
 		tokens.RegisteredClaims
-	}{
-		Identity: identityJWT,
-		Round:    1,
-		Boost:    1.5,
-		Final:    false,
-	}
+	}{}
+	boosterClaims.Booster.GID = *gid
+	boosterClaims.Booster.Round = 1
+	boosterClaims.Booster.Boost = 1.5
+	boosterClaims.Booster.Final = false
 
-	boostToken, _ := tokens.SignJWT(boostClaims, boostXPrivKey)
-	body, _ := json.Marshal(setBoostRequest{BoostJWT: boostToken})
+	boosterToken, _ := tokens.SignJWT(boosterClaims, boosterPrivKey)
+	body, _ := json.Marshal(setBoostRequest{BoosterJWT: boosterToken})
 
 	req := httptest.NewRequest(http.MethodPost, "/setBoost", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

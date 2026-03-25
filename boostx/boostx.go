@@ -13,12 +13,16 @@ import (
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
-// Token types for GamePass, Boost, and Identity JWT payloads.
+// Token types for GID, GamePass, Booster, CheckBet, Settlement, and Money.
 type (
-	Identity         = tokens.Identity
+	GID              = tokens.GID
 	GamePass         = tokens.GamePass
 	GamePassParams   = tokens.GamePassParams
-	Boost            = tokens.Boost
+	Booster          = tokens.Booster
+	CheckBet         = tokens.CheckBet
+	Settlement       = tokens.Settlement
+	SettlementParams = tokens.SettlementParams
+	Money            = tokens.Money
 	RegisteredClaims = tokens.RegisteredClaims
 )
 
@@ -34,8 +38,10 @@ var (
 	ErrInvalidPrivateKey = tokens.ErrInvalidPrivateKey
 	ErrInvalidPublicKey  = tokens.ErrInvalidPublicKey
 	ErrInvalidGamePass   = tokens.ErrInvalidGamePass
-	ErrInvalidBoost      = tokens.ErrInvalidBoost
-	ErrInvalidIdentity   = tokens.ErrInvalidIdentity
+	ErrInvalidBooster    = tokens.ErrInvalidBooster
+	ErrInvalidCheckBet   = tokens.ErrInvalidCheckBet
+	ErrInvalidSettlement = tokens.ErrInvalidSettlement
+	ErrInvalidGID        = tokens.ErrInvalidGID
 	ErrInvalidSignature  = tokens.ErrInvalidSignature
 	ErrMissingClaim      = tokens.ErrMissingClaim
 	ErrInvalidClaim      = tokens.ErrInvalidClaim
@@ -44,8 +50,8 @@ var (
 // MountHandlers registers handlers on mux at prefix. The /setBoost endpoint is
 // always registered. The /checkBet endpoint is registered only if store implements
 // BetStoreChecker. Uses static keys for token verification. Returns error if either key is nil.
-func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gamepassPubKey, boostPubKey *ecdsa.PublicKey) error {
-	keyStore, err := keys.NewStaticKeyStore(gamepassPubKey, boostPubKey)
+func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gamepassPubKey, boosterPubKey *ecdsa.PublicKey) error {
+	keyStore, err := keys.NewStaticKeyStore(gamepassPubKey, boosterPubKey)
 	if err != nil {
 		return err
 	}
@@ -61,4 +67,36 @@ func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore Bet
 // CreateGamePassToken creates a signed GamePass JWT for testing purposes.
 func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (string, error) {
 	return tokens.CreateGamePassToken(privateKey, params)
+}
+
+// CreateSettlementToken creates a signed Settlement JWT.
+func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams) (string, error) {
+	return tokens.CreateSettlementToken(privateKey, params)
+}
+
+// BuildGID creates a signed GID struct.
+func BuildGID(partner, user, bet string, privateKey *ecdsa.PrivateKey) (*GID, error) {
+	return tokens.BuildGID(partner, user, bet, privateKey)
+}
+
+// Key loading utilities — delegates to boostx/keys package.
+
+// LoadPrivateKeyFromFile reads and parses an ECDSA P-256 private key from a file.
+func LoadPrivateKeyFromFile(path string) (*ecdsa.PrivateKey, error) {
+	return keys.LoadPrivateKeyFromFile(path)
+}
+
+// LoadPrivateKeyFromPEM parses an ECDSA P-256 private key from PEM-encoded data.
+func LoadPrivateKeyFromPEM(pemData []byte) (*ecdsa.PrivateKey, error) {
+	return keys.LoadPrivateKeyFromPEM(pemData)
+}
+
+// LoadPublicKeyFromFile reads and parses an ECDSA P-256 public key from a file.
+func LoadPublicKeyFromFile(path string) (*ecdsa.PublicKey, error) {
+	return keys.LoadPublicKeyFromFile(path)
+}
+
+// LoadPublicKeyFromPEM parses an ECDSA P-256 public key from PEM-encoded data.
+func LoadPublicKeyFromPEM(pemData []byte) (*ecdsa.PublicKey, error) {
+	return keys.LoadPublicKeyFromPEM(pemData)
 }

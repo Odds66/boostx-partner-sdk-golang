@@ -24,11 +24,11 @@ import (
 
 func main() {
     gamepassPubKey, _ := boostx.LoadPublicKeyFromFile("gamepass_public.pem")
-    boostPubKey, _ := boostx.LoadPublicKeyFromFile("boost_public.pem")
+    boosterPubKey, _ := boostx.LoadPublicKeyFromFile("booster_public.pem")
     betStore := NewYourBetStore()
 
     mux := http.NewServeMux()
-    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, gamepassPubKey, boostPubKey); err != nil {
+    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, gamepassPubKey, boosterPubKey); err != nil {
         log.Fatal(err)
     }
 
@@ -42,7 +42,7 @@ Partners must implement the `BetStoreUpdater` interface:
 
 ```go
 type BetStoreUpdater interface {
-    SetBoost(ctx context.Context, boost *boostx.Boost) error
+    SetBoost(ctx context.Context, booster *boostx.Booster) error
 }
 ```
 
@@ -52,13 +52,13 @@ To enable the optional `/checkBet` endpoint, also implement `BetStoreChecker`:
 
 ```go
 type BetStoreChecker interface {
-    CheckBet(ctx context.Context, identity *boostx.Identity) (active bool, err error)
+    CheckBet(ctx context.Context, gid *boostx.GID) (active bool, err error)
 }
 ```
 
 - **CheckBet** - Returns true if the bet is active and eligible for boosting. This endpoint is only called by BoostX when enabled for your integration (disabled by default).
 
-See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/boostx) for detailed type documentation (`GamePass`, `Boost`).
+See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/boostx) for detailed type documentation (`GamePass`, `Booster`, `GID`).
 
 ## API Endpoints
 
@@ -67,12 +67,27 @@ See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/
 | `{prefix}/checkBet` | POST | Check if a bet is active *(optional, requires BetStoreChecker)* |
 | `{prefix}/setBoost` | POST | Receive boost updates |
 
+### POST /checkBet
+
+Request body:
+```json
+{"checkbetJWT": "eyJhbGciOiJFUzI1NiJ9..."}
+```
+
+### POST /setBoost
+
+Request body:
+```json
+{"boosterJWT": "eyJhbGciOiJFUzI1NiJ9..."}
+```
+
 ## Error Handling
 
 The SDK provides typed errors:
 
 - `ErrInvalidPrivateKey` / `ErrInvalidPublicKey` - Invalid ECDSA key
-- `ErrInvalidGamePass` / `ErrInvalidBoost` - Invalid token
+- `ErrInvalidGamePass` / `ErrInvalidBooster` / `ErrInvalidCheckBet` / `ErrInvalidSettlement` - Invalid token
+- `ErrInvalidGID` - Invalid GID struct
 - `ErrInvalidSignature` - Invalid token signature
 - `ErrMissingClaim` / `ErrInvalidClaim` - Claim issues
 
@@ -111,6 +126,21 @@ token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
 })
 ```
 
+### Creating Settlement Tokens
+
+Partners send settlement tokens to BoostX after a bet is settled:
+
+```go
+token, err := boostx.CreateSettlementToken(privateKey, boostx.SettlementParams{
+    Partner:  "partner-id",
+    User:     "user-id",
+    Bet:      "bet-id",
+    Result:   "won",      // "won", "lost", "cancelled", "refunded"
+    Amount:   150.0,
+    Currency: "USD",
+})
+```
+
 ### Custom Key Storage
 
 For multi-tenant scenarios, implement `KeyStore`:
@@ -118,7 +148,7 @@ For multi-tenant scenarios, implement `KeyStore`:
 ```go
 type KeyStore interface {
     GamePassPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
-    BoostPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+    BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 }
 
 boostx.MountHandlersWithKeyStorage(mux, "/api/boostx", betStore, yourKeyStore)

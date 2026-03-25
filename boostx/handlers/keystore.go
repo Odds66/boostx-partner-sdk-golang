@@ -10,6 +10,6 @@ type KeyStore interface {
 	// GamePassPublicKey returns the public key for verifying GamePass tokens.
 	GamePassPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 
-	// BoostPublicKey returns the public key for verifying Boost tokens.
-	BoostPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+	// BoosterPublicKey returns the public key for verifying Booster tokens.
+	BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 }

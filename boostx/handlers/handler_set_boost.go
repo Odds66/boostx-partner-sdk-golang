@@ -20,7 +20,7 @@ func NewSetBoostHandler(store BetStoreUpdater, keys KeyStore) *SetBoostHandler {
 
 // setBoostRequest is the request body for POST /setBoost.
 type setBoostRequest struct {
-	BoostJWT string `json:"boostJWT"`
+	BoosterJWT string `json:"boosterJWT"`
 }
 
 // ServeHTTP receives and validates boost updates from BoostX.
@@ -39,31 +39,32 @@ func (h *SetBoostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract claims without verification to get key lookup params
-	partner, user, bet, err := tokens.ExtractBoostClaims(req.BoostJWT)
+	partner, user, bet, err := tokens.ExtractBoosterClaims(req.BoosterJWT)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid boost token")
+		writeError(w, http.StatusBadRequest, "invalid booster token")
 		return
 	}
 
-	boostPubKey, err := h.keys.BoostPublicKey(r.Context(), partner, user, bet)
+	boosterPubKey, err := h.keys.BoosterPublicKey(r.Context(), partner, user, bet)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get boost key")
+		writeError(w, http.StatusInternalServerError, "failed to get booster key")
 		return
 	}
 
-	gamepassPubKey, err := h.keys.GamePassPublicKey(r.Context(), partner, user, bet)
+	// GamePass key is the partner's key — used to verify the GID signature
+	partnerPubKey, err := h.keys.GamePassPublicKey(r.Context(), partner, user, bet)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get gamepass key")
 		return
 	}
 
-	boost, err := tokens.ParseBoostToken(req.BoostJWT, boostPubKey, gamepassPubKey)
+	booster, err := tokens.ParseBoosterToken(req.BoosterJWT, boosterPubKey, partnerPubKey)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid boost token")
+		writeError(w, http.StatusBadRequest, "invalid booster token")
 		return
 	}
 
-	if err := h.store.SetBoost(r.Context(), boost); err != nil {
+	if err := h.store.SetBoost(r.Context(), booster); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to set boost")
 		return
 	}
