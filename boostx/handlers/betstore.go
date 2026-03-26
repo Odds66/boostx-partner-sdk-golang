@@ -1,3 +1,5 @@
+// Package handlers provides inbound HTTP handlers for the BoostX partner
+// integration endpoints.
 package handlers
 
 import (

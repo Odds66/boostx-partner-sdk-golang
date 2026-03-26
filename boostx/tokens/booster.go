@@ -1,3 +1,5 @@
+// Package tokens provides JWT token types (GamePass, Booster, CheckBet, Settlement)
+// and ES256 signing/parsing for the BoostX partner integration.
 package tokens
 
 import (

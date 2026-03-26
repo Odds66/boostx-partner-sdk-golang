@@ -1,5 +1,10 @@
 # boostx-partner-sdk-golang
 
+[![Go 1.21+](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Odds66/boostx-partner-sdk-golang/boostx.svg)](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/boostx)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/Odds66/boostx-partner-sdk-golang/actions/workflows/ci.yml/badge.svg)](https://github.com/Odds66/boostx-partner-sdk-golang/actions/workflows/ci.yml)
+
 Go SDK for integrating with the BoostX platform as a partner.
 
 ## Installation
