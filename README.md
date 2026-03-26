@@ -53,7 +53,7 @@ type BetStoreUpdater interface {
 
 - **SetBoost** - Stores the boost update from BoostX
 
-To enable the optional `/checkBet` endpoint, also implement `BetStoreChecker`:
+To enable the optional `/check-bet` endpoint, also implement `BetStoreChecker`:
 
 ```go
 type BetStoreChecker interface {
@@ -69,17 +69,17 @@ See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `{prefix}/checkBet` | POST | Check if a bet is active *(optional, requires BetStoreChecker)* |
-| `{prefix}/setBoost` | POST | Receive boost updates |
+| `{prefix}/check-bet` | POST | Check if a bet is active *(optional, requires BetStoreChecker)* |
+| `{prefix}/set-boost` | POST | Receive boost updates |
 
-### POST /checkBet
+### POST /check-bet
 
 Request body:
 ```json
 {"checkbetJWT": "eyJhbGciOiJFUzI1NiJ9..."}
 ```
 
-### POST /setBoost
+### POST /set-boost
 
 Request body:
 ```json

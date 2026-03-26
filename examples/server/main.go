@@ -12,7 +12,7 @@
 //
 // Test with curl:
 //
-//	curl -X POST http://localhost:8080/api/boostx/setBoost \
+//	curl -X POST http://localhost:8080/api/boostx/set-boost \
 //	  -H "Content-Type: application/json" \
 //	  -d '{"boosterJWT": "..."}'
 package main
@@ -78,8 +78,8 @@ func main() {
 	addr := ":8080"
 	fmt.Printf("Starting server on %s\n", addr)
 	fmt.Println("Endpoints:")
-	fmt.Println("  POST /api/boostx/checkBet  - Check if bet is active (optional)")
-	fmt.Println("  POST /api/boostx/setBoost  - Receive boost update")
+	fmt.Println("  POST /api/boostx/check-bet  - Check if bet is active (optional)")
+	fmt.Println("  POST /api/boostx/set-boost  - Receive boost update")
 	fmt.Println("  GET  /api/test/gamepass    - Generate test GamePass token")
 	fmt.Println()
 
@@ -116,7 +116,7 @@ func NewMemoryBetStore() *MemoryBetStore {
 }
 
 // CheckBet returns true if bet is active.
-// Implementing BetStoreChecker is optional — the /checkBet endpoint is only
+// Implementing BetStoreChecker is optional — the /check-bet endpoint is only
 // registered when the BetStoreUpdater also implements this method.
 func (s *MemoryBetStore) CheckBet(ctx context.Context, gid *boostx.GID) (bool, error) {
 	s.mu.RLock()

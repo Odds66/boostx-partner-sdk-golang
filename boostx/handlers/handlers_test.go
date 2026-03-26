@@ -95,7 +95,7 @@ func TestCheckBetHandler_Success(t *testing.T) {
 	token := createTestCheckBetToken(t, partnerPrivKey, boosterPrivKey)
 	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: token})
 
-	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/check-bet", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -105,13 +105,15 @@ func TestCheckBetHandler_Success(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var resp checkBetResponse
+	var resp struct {
+		Result checkBetResponse `json:"result"`
+	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if !resp.Active {
-		t.Error("expected active=true")
+	if !resp.Result.Active {
+		t.Error("expected result.active=true")
 	}
 }
 
@@ -126,7 +128,7 @@ func TestCheckBetHandler_Inactive(t *testing.T) {
 	token := createTestCheckBetToken(t, partnerPrivKey, boosterPrivKey)
 	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: token})
 
-	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/check-bet", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -136,20 +138,22 @@ func TestCheckBetHandler_Inactive(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var resp checkBetResponse
+	var resp struct {
+		Result checkBetResponse `json:"result"`
+	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if resp.Active {
-		t.Error("expected active=false")
+	if resp.Result.Active {
+		t.Error("expected result.active=false")
 	}
 }
 
 func TestCheckBetHandler_InvalidBody(t *testing.T) {
 	handler := NewCheckBetHandler(&mockFullBetStore{}, &mockKeyStore{})
 
-	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader([]byte("not json")))
+	req := httptest.NewRequest(http.MethodPost, "/check-bet", bytes.NewReader([]byte("not json")))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -170,7 +174,7 @@ func TestCheckBetHandler_InvalidToken(t *testing.T) {
 
 	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: "invalid.token.here"})
 
-	req := httptest.NewRequest(http.MethodPost, "/checkBet", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/check-bet", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -211,7 +215,7 @@ func TestSetBoostHandler_Success(t *testing.T) {
 	boosterToken, _ := tokens.SignJWT(boosterClaims, boosterPrivKey)
 	body, _ := json.Marshal(setBoostRequest{BoosterJWT: boosterToken})
 
-	req := httptest.NewRequest(http.MethodPost, "/setBoost", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/set-boost", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -221,9 +225,17 @@ func TestSetBoostHandler_Success(t *testing.T) {
 		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
 	}
 
-	// Verify empty body (spec says just 200 OK)
-	if rec.Body.Len() != 0 {
-		t.Errorf("expected empty body, got %q", rec.Body.String())
+	// Verify {"result":{"ok":true}} response envelope
+	var resp struct {
+		Result struct {
+			OK bool `json:"ok"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Result.OK {
+		t.Error("expected result.ok=true")
 	}
 }
 
@@ -235,7 +247,7 @@ func TestMount_WithCheckBet(t *testing.T) {
 	Mount(mux, "/api/boostx", betStore, keyStore)
 
 	// Both endpoints should be registered
-	for _, endpoint := range []string{"/api/boostx/checkBet", "/api/boostx/setBoost"} {
+	for _, endpoint := range []string{"/api/boostx/check-bet", "/api/boostx/set-boost"} {
 		req := httptest.NewRequest(http.MethodPost, endpoint, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -253,19 +265,19 @@ func TestMount_WithoutCheckBet(t *testing.T) {
 
 	Mount(mux, "/api/boostx", betStore, keyStore)
 
-	// /setBoost should be registered
-	req := httptest.NewRequest(http.MethodPost, "/api/boostx/setBoost", nil)
+	// /set-boost should be registered
+	req := httptest.NewRequest(http.MethodPost, "/api/boostx/set-boost", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code == http.StatusNotFound {
-		t.Error("endpoint /api/boostx/setBoost not registered (got 404)")
+		t.Error("endpoint /api/boostx/set-boost not registered (got 404)")
 	}
 
-	// /checkBet should NOT be registered
-	req = httptest.NewRequest(http.MethodGet, "/api/boostx/checkBet", nil)
+	// /check-bet should NOT be registered
+	req = httptest.NewRequest(http.MethodGet, "/api/boostx/check-bet", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("endpoint /api/boostx/checkBet should not be registered, got %d", rec.Code)
+		t.Errorf("endpoint /api/boostx/check-bet should not be registered, got %d", rec.Code)
 	}
 }

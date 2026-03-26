@@ -7,7 +7,7 @@ import (
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
-// SetBoostHandler handles POST /setBoost requests.
+// SetBoostHandler handles POST /set-boost requests.
 type SetBoostHandler struct {
 	keys  KeyStore
 	store BetStoreUpdater
@@ -18,7 +18,7 @@ func NewSetBoostHandler(store BetStoreUpdater, keys KeyStore) *SetBoostHandler {
 	return &SetBoostHandler{keys: keys, store: store}
 }
 
-// setBoostRequest is the request body for POST /setBoost.
+// setBoostRequest is the request body for POST /set-boost.
 type setBoostRequest struct {
 	BoosterJWT string `json:"boosterJWT"`
 }
@@ -64,5 +64,5 @@ func (h *SetBoostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, resultResponse{Result: okResult{OK: true}})
 }

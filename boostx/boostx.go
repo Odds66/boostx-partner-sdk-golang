@@ -51,8 +51,8 @@ var (
 	ErrInvalidClaim      = tokens.ErrInvalidClaim
 )
 
-// MountHandlers registers handlers on mux at prefix. The /setBoost endpoint is
-// always registered. The /checkBet endpoint is registered only if store implements
+// MountHandlers registers handlers on mux at prefix. The /set-boost endpoint is
+// always registered. The /check-bet endpoint is registered only if store implements
 // BetStoreChecker. Uses static keys for token verification. Returns error if either key is nil.
 func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gamepassPubKey, boosterPubKey *ecdsa.PublicKey) error {
 	keyStore, err := keys.NewStaticKeyStore(gamepassPubKey, boosterPubKey)

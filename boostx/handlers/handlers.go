@@ -14,6 +14,17 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+// resultResponse wraps a response payload in the {"result": ...} envelope
+// expected by the BoostX backend.
+type resultResponse struct {
+	Result any `json:"result"`
+}
+
+// okResult is the success payload for endpoints that have no domain-specific data.
+type okResult struct {
+	OK bool `json:"ok"`
+}
+
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -27,12 +38,12 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 // Mount registers handlers on the given mux at the specified prefix.
-// The /setBoost endpoint is always registered.
-// The /checkBet endpoint is registered only if betStore implements BetStoreChecker.
+// The /set-boost endpoint is always registered.
+// The /check-bet endpoint is registered only if betStore implements BetStoreChecker.
 func Mount(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
 	prefix = strings.TrimSuffix(prefix, "/")
 	if cbs, ok := betStore.(BetStoreChecker); ok {
-		mux.Handle("POST "+prefix+"/checkBet", NewCheckBetHandler(cbs, keyStore))
+		mux.Handle("POST "+prefix+"/check-bet", NewCheckBetHandler(cbs, keyStore))
 	}
-	mux.Handle("POST "+prefix+"/setBoost", NewSetBoostHandler(betStore, keyStore))
+	mux.Handle("POST "+prefix+"/set-boost", NewSetBoostHandler(betStore, keyStore))
 }
