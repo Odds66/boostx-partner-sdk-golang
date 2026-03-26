@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -33,7 +32,7 @@ func TestSubmitSettlement_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := New(WithBaseURL(srv.URL))
-	err := c.SubmitSettlement(context.Background(), "eyJhbGciOiJFUzI1NiJ9.test.sig")
+	err := c.SubmitSettlement(t.Context(), "eyJhbGciOiJFUzI1NiJ9.test.sig")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,10 +84,10 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 			defer srv.Close()
 
 			c := New(WithBaseURL(srv.URL))
-			err := c.SubmitSettlement(context.Background(), "some.jwt.token")
+			err := c.SubmitSettlement(t.Context(), "some.jwt.token")
 
-			var apiErr *APIError
-			if !errors.As(err, &apiErr) {
+			apiErr, ok := errors.AsType[*APIError](err)
+			if !ok {
 				t.Fatalf("expected APIError, got %T: %v", err, err)
 			}
 			if apiErr.StatusCode != tt.wantStatus {
@@ -103,7 +102,7 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 
 func TestSubmitSettlement_EmptyJWT(t *testing.T) {
 	c := New()
-	err := c.SubmitSettlement(context.Background(), "")
+	err := c.SubmitSettlement(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

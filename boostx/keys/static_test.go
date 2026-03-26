@@ -1,7 +1,6 @@
 package keys
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -59,7 +58,7 @@ func TestStaticKeyStore_GamePassPublicKey(t *testing.T) {
 
 	store, _ := NewStaticKeyStore(gamepassPubKey, boosterPubKey)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	key, err := store.GamePassPublicKey(ctx, "partner", "user", "bet")
 	if err != nil {
 		t.Fatalf("GamePassPublicKey failed: %v", err)
@@ -76,7 +75,7 @@ func TestStaticKeyStore_BoosterPublicKey(t *testing.T) {
 
 	store, _ := NewStaticKeyStore(gamepassPubKey, boosterPubKey)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	key, err := store.BoosterPublicKey(ctx, "partner", "user", "bet")
 	if err != nil {
 		t.Fatalf("BoosterPublicKey failed: %v", err)

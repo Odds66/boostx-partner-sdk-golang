@@ -32,7 +32,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func Mount(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
 	prefix = strings.TrimSuffix(prefix, "/")
 	if cbs, ok := betStore.(BetStoreChecker); ok {
-		mux.Handle(prefix+"/checkBet", NewCheckBetHandler(cbs, keyStore))
+		mux.Handle("POST "+prefix+"/checkBet", NewCheckBetHandler(cbs, keyStore))
 	}
-	mux.Handle(prefix+"/setBoost", NewSetBoostHandler(betStore, keyStore))
+	mux.Handle("POST "+prefix+"/setBoost", NewSetBoostHandler(betStore, keyStore))
 }

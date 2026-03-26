@@ -30,11 +30,6 @@ type checkBetResponse struct {
 
 // ServeHTTP validates checkbetJWT and checks if bet is active.
 func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 
 	var req checkBetRequest

@@ -146,19 +146,6 @@ func TestCheckBetHandler_Inactive(t *testing.T) {
 	}
 }
 
-func TestCheckBetHandler_MethodNotAllowed(t *testing.T) {
-	handler := NewCheckBetHandler(&mockFullBetStore{}, &mockKeyStore{})
-
-	req := httptest.NewRequest(http.MethodGet, "/checkBet", nil)
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
-	}
-}
-
 func TestCheckBetHandler_InvalidBody(t *testing.T) {
 	handler := NewCheckBetHandler(&mockFullBetStore{}, &mockKeyStore{})
 
@@ -249,7 +236,7 @@ func TestMount_WithCheckBet(t *testing.T) {
 
 	// Both endpoints should be registered
 	for _, endpoint := range []string{"/api/boostx/checkBet", "/api/boostx/setBoost"} {
-		req := httptest.NewRequest(http.MethodGet, endpoint, nil)
+		req := httptest.NewRequest(http.MethodPost, endpoint, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 
@@ -267,7 +254,7 @@ func TestMount_WithoutCheckBet(t *testing.T) {
 	Mount(mux, "/api/boostx", betStore, keyStore)
 
 	// /setBoost should be registered
-	req := httptest.NewRequest(http.MethodGet, "/api/boostx/setBoost", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/boostx/setBoost", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code == http.StatusNotFound {

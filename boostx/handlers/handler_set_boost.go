@@ -25,11 +25,6 @@ type setBoostRequest struct {
 
 // ServeHTTP receives and validates boost updates from BoostX.
 func (h *SetBoostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 
 	var req setBoostRequest
