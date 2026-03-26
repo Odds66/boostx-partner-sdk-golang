@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0
+
+### New Features
+- Add outbound `Client` (`boostx/client` package) — the first outbound HTTP client in the SDK
+- Add `SubmitSettlement` method for posting signed settlement JWTs to `POST /api/integration/settlement`
+- Add `NewClient` factory with functional options: `WithBaseURL`, `WithHTTPClient`
+- Re-export `APIError` from root `boostx` package
+
 ## v0.3.0
 
 ### Breaking Changes

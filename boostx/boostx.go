@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"net/http"
 
+	"github.com/Odds66/boostx-partner-sdk-golang/boostx/client"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/handlers"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
@@ -25,6 +26,9 @@ type (
 	Money            = tokens.Money
 	RegisteredClaims = tokens.RegisteredClaims
 )
+
+// APIError is returned when the BoostX API responds with an error.
+type APIError = client.APIError
 
 // Handler interfaces for key and bet storage.
 type (
@@ -62,6 +66,11 @@ func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gam
 // MountHandlersWithKeyStorage mounts handlers with a custom KeyStore for multi-tenant scenarios.
 func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
 	handlers.Mount(mux, prefix, betStore, keyStore)
+}
+
+// NewClient creates a new BoostX API client for outbound calls.
+func NewClient(opts ...client.Option) *client.Client {
+	return client.New(opts...)
 }
 
 // CreateGamePassToken creates a signed GamePass JWT for testing purposes.
