@@ -33,7 +33,7 @@ import (
 func main() {
 	// Generate test keys (in production, load from secure storage)
 	partnerPrivateKey, partnerPublicKey := generateTestKeyPair("Partner")
-	_, boostXPublicKey := generateTestKeyPair("BoostX")
+	_, boostxPublicKey := generateTestKeyPair("BoostX")
 
 	// Create in-memory bet store
 	betStore := NewMemoryBetStore()
@@ -47,7 +47,7 @@ func main() {
 
 	// Mount handlers on mux
 	mux := http.NewServeMux()
-	if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPublicKey, boostXPublicKey); err != nil {
+	if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPublicKey, boostxPublicKey); err != nil {
 		log.Fatalf("Failed to mount handlers: %v", err)
 	}
 

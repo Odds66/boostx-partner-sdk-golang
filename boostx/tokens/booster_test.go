@@ -30,7 +30,7 @@ func TestCalculateFinalCoefficient(t *testing.T) {
 
 func TestParseBoosterToken(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKey(t)
-	boosterPrivKey, boosterPubKey := generateTestKey(t)
+	boostxPrivKey, boostxPubKey := generateTestKey(t)
 
 	// Build GID
 	gid, err := BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
@@ -51,12 +51,12 @@ func TestParseBoosterToken(t *testing.T) {
 		},
 	}
 
-	boosterToken, err := SignJWT(bc, boosterPrivKey)
+	boosterToken, err := SignJWT(bc, boostxPrivKey)
 	if err != nil {
 		t.Fatalf("failed to sign Booster token: %v", err)
 	}
 
-	booster, err := ParseBoosterToken(boosterToken, boosterPubKey, partnerPubKey)
+	booster, err := ParseBoosterToken(boosterToken, boostxPubKey, partnerPubKey)
 	if err != nil {
 		t.Fatalf("ParseBoosterToken failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestParseBoosterToken(t *testing.T) {
 
 func TestParseBoosterToken_NilPublicKey(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKey(t)
-	boosterPrivKey, boosterPubKey := generateTestKey(t)
+	boostxPrivKey, boostxPubKey := generateTestKey(t)
 
 	gid, _ := BuildGID("partner", "user", "bet", partnerPrivKey)
 
@@ -98,16 +98,16 @@ func TestParseBoosterToken_NilPublicKey(t *testing.T) {
 		},
 	}
 
-	boosterToken, _ := SignJWT(bc, boosterPrivKey)
+	boosterToken, _ := SignJWT(bc, boostxPrivKey)
 
-	// Test nil boosterPublicKey
+	// Test nil boostxPublicKey
 	_, err := ParseBoosterToken(boosterToken, nil, partnerPubKey)
 	if !errors.Is(err, ErrInvalidPublicKey) {
-		t.Errorf("expected ErrInvalidPublicKey with nil boosterPublicKey, got %v", err)
+		t.Errorf("expected ErrInvalidPublicKey with nil boostxPublicKey, got %v", err)
 	}
 
 	// Test nil partnerPublicKey
-	_, err = ParseBoosterToken(boosterToken, boosterPubKey, nil)
+	_, err = ParseBoosterToken(boosterToken, boostxPubKey, nil)
 	if !errors.Is(err, ErrInvalidPublicKey) {
 		t.Errorf("expected ErrInvalidPublicKey with nil partnerPublicKey, got %v", err)
 	}
@@ -115,8 +115,8 @@ func TestParseBoosterToken_NilPublicKey(t *testing.T) {
 
 func TestParseBoosterToken_InvalidSignature(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKey(t)
-	boosterPrivKey, _ := generateTestKey(t)
-	_, wrongBoosterPubKey := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
+	_, wrongBoostxPubKey := generateTestKey(t)
 
 	gid, _ := BuildGID("partner", "user", "bet", partnerPrivKey)
 
@@ -128,9 +128,9 @@ func TestParseBoosterToken_InvalidSignature(t *testing.T) {
 		},
 	}
 
-	boosterToken, _ := SignJWT(bc, boosterPrivKey)
+	boosterToken, _ := SignJWT(bc, boostxPrivKey)
 
-	_, err := ParseBoosterToken(boosterToken, wrongBoosterPubKey, partnerPubKey)
+	_, err := ParseBoosterToken(boosterToken, wrongBoostxPubKey, partnerPubKey)
 	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("expected ErrInvalidSignature, got %v", err)
 	}
@@ -138,7 +138,7 @@ func TestParseBoosterToken_InvalidSignature(t *testing.T) {
 
 func TestExtractBoosterClaims(t *testing.T) {
 	partnerPrivKey, _ := generateTestKey(t)
-	boosterPrivKey, _ := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
 
 	gid, _ := BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 
@@ -150,7 +150,7 @@ func TestExtractBoosterClaims(t *testing.T) {
 		},
 	}
 
-	boosterToken, _ := SignJWT(bc, boosterPrivKey)
+	boosterToken, _ := SignJWT(bc, boostxPrivKey)
 
 	partner, user, bet, err := ExtractBoosterClaims(boosterToken)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestExtractBoosterClaims(t *testing.T) {
 
 func TestBoosterToken_WireFormat(t *testing.T) {
 	partnerPrivKey, _ := generateTestKey(t)
-	boosterPrivKey, _ := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
 
 	gid, _ := BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 
@@ -186,7 +186,7 @@ func TestBoosterToken_WireFormat(t *testing.T) {
 		},
 	}
 
-	token, _ := SignJWT(bc, boosterPrivKey)
+	token, _ := SignJWT(bc, boostxPrivKey)
 
 	var raw map[string]json.RawMessage
 	if err := ExtractJWTClaims(token, &raw); err != nil {
@@ -209,7 +209,7 @@ func TestBoosterToken_WireFormat(t *testing.T) {
 }
 
 func TestExtractBoosterClaims_MissingGID(t *testing.T) {
-	boosterPrivKey, _ := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
 
 	bc := boosterClaims{
 		Booster: boosterPayload{
@@ -219,7 +219,7 @@ func TestExtractBoosterClaims_MissingGID(t *testing.T) {
 		},
 	}
 
-	boosterToken, _ := SignJWT(bc, boosterPrivKey)
+	boosterToken, _ := SignJWT(bc, boostxPrivKey)
 
 	_, _, _, err := ExtractBoosterClaims(boosterToken)
 	if !errors.Is(err, ErrMissingClaim) {

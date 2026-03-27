@@ -14,6 +14,15 @@ import (
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
+// Key management types for key storage, signing, and verification.
+type (
+	ClientKeyStore        = client.KeyStore
+	HandlersKeyStore      = handlers.KeyStore
+	StaticKeyStore        = keys.StaticKeyStore
+	StaticPublicKeyStore  = keys.StaticPublicKeyStore
+	StaticPrivateKeyStore = keys.StaticPrivateKeyStore
+)
+
 // Token types for GID, GamePass, Booster, CheckBet, Settlement, and Money.
 type (
 	GID              = tokens.GID
@@ -27,14 +36,11 @@ type (
 	RegisteredClaims = tokens.RegisteredClaims
 )
 
-// APIError is returned when the BoostX API responds with an error.
-type APIError = client.APIError
-
-// Handler interfaces for key and bet storage.
+// Handlers and client types for the HTTP layer.
 type (
-	KeyStore        = handlers.KeyStore
 	BetStoreUpdater = handlers.BetStoreUpdater
 	BetStoreChecker = handlers.BetStoreChecker
+	APIError        = client.APIError
 )
 
 // Sentinel errors for token parsing and validation.
@@ -54,8 +60,8 @@ var (
 // MountHandlers registers handlers on mux at prefix. The /set-boost endpoint is
 // always registered. The /check-bet endpoint is registered only if store implements
 // BetStoreChecker. Uses static keys for token verification. Returns error if either key is nil.
-func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gamepassPubKey, boosterPubKey *ecdsa.PublicKey) error {
-	keyStore, err := keys.NewStaticKeyStore(gamepassPubKey, boosterPubKey)
+func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, partnerPubKey, boostxPubKey *ecdsa.PublicKey) error {
+	keyStore, err := keys.NewStaticPublicKeyStore(partnerPubKey, boostxPubKey)
 	if err != nil {
 		return err
 	}
@@ -63,14 +69,19 @@ func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, gam
 	return nil
 }
 
-// MountHandlersWithKeyStorage mounts handlers with a custom KeyStore for multi-tenant scenarios.
-func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
+// MountHandlersWithKeyStorage mounts handlers with a custom HandlersKeyStore for multi-tenant scenarios.
+func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore HandlersKeyStore) {
 	handlers.Mount(mux, prefix, betStore, keyStore)
 }
 
+// NewStaticPrivateKeyStore creates a StaticPrivateKeyStore with the given key.
+func NewStaticPrivateKeyStore(key *ecdsa.PrivateKey) (*StaticPrivateKeyStore, error) {
+	return keys.NewStaticPrivateKeyStore(key)
+}
+
 // NewClient creates a new BoostX API client for outbound calls.
-func NewClient(opts ...client.Option) *client.Client {
-	return client.New(opts...)
+func NewClient(keys ClientKeyStore, opts ...client.Option) *client.Client {
+	return client.New(keys, opts...)
 }
 
 // CreateGamePassToken creates a signed GamePass JWT for testing purposes.

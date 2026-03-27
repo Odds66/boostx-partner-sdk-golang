@@ -40,20 +40,19 @@ func (h *SetBoostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boosterPubKey, err := h.keys.BoosterPublicKey(r.Context(), partner, user, bet)
+	boostxPubKey, err := h.keys.BoostxPublicKey(r.Context(), partner, user, bet)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get booster key")
+		writeError(w, http.StatusInternalServerError, "failed to get boostx key")
 		return
 	}
 
-	// GamePass key is the partner's key — used to verify the GID signature
-	partnerPubKey, err := h.keys.GamePassPublicKey(r.Context(), partner, user, bet)
+	partnerPubKey, err := h.keys.PartnerPublicKey(r.Context(), partner, user, bet)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get gamepass key")
+		writeError(w, http.StatusInternalServerError, "failed to get partner key")
 		return
 	}
 
-	booster, err := tokens.ParseBoosterToken(req.BoosterJWT, boosterPubKey, partnerPubKey)
+	booster, err := tokens.ParseBoosterToken(req.BoosterJWT, boostxPubKey, partnerPubKey)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid booster token")
 		return

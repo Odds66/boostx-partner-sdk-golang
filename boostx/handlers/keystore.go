@@ -7,9 +7,9 @@ import (
 
 // KeyStore provides public keys for token verification.
 type KeyStore interface {
-	// GamePassPublicKey returns the public key for verifying GamePass tokens.
-	GamePassPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+	// PartnerPublicKey returns the partner's public key for verifying GID signatures.
+	PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 
-	// BoosterPublicKey returns the public key for verifying Booster tokens.
-	BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+	// BoostxPublicKey returns the Boostx public key for verifying Booster and CheckBet tokens.
+	BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 }

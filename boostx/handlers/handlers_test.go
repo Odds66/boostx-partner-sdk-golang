@@ -25,17 +25,17 @@ func generateTestKeyPair(t *testing.T) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 
 // mockKeyStore implements KeyStore for testing
 type mockKeyStore struct {
-	gamepassKey *ecdsa.PublicKey
-	boosterKey  *ecdsa.PublicKey
-	err         error
+	partnerKey *ecdsa.PublicKey
+	boostxKey  *ecdsa.PublicKey
+	err        error
 }
 
-func (m *mockKeyStore) GamePassPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return m.gamepassKey, m.err
+func (m *mockKeyStore) PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+	return m.partnerKey, m.err
 }
 
-func (m *mockKeyStore) BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return m.boosterKey, m.err
+func (m *mockKeyStore) BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+	return m.boostxKey, m.err
 }
 
 // mockBetStore implements BetStoreUpdater (SetBoost only)
@@ -61,7 +61,7 @@ func (m *mockFullBetStore) CheckBet(ctx context.Context, gid *tokens.GID) (bool,
 	return m.active, m.err
 }
 
-func createTestCheckBetToken(t *testing.T, partnerPrivKey *ecdsa.PrivateKey, boosterPrivKey *ecdsa.PrivateKey) string {
+func createTestCheckBetToken(t *testing.T, partnerPrivKey *ecdsa.PrivateKey, boostxPrivKey *ecdsa.PrivateKey) string {
 	t.Helper()
 	gid, err := tokens.BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 	if err != nil {
@@ -77,7 +77,7 @@ func createTestCheckBetToken(t *testing.T, partnerPrivKey *ecdsa.PrivateKey, boo
 	}{}
 	claims.CheckBet.GID = *gid
 
-	token, err := tokens.SignJWT(claims, boosterPrivKey)
+	token, err := tokens.SignJWT(claims, boostxPrivKey)
 	if err != nil {
 		t.Fatalf("failed to create checkbet token: %v", err)
 	}
@@ -86,13 +86,13 @@ func createTestCheckBetToken(t *testing.T, partnerPrivKey *ecdsa.PrivateKey, boo
 
 func TestCheckBetHandler_Success(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
-	boosterPrivKey, boosterPubKey := generateTestKeyPair(t)
+	boostxPrivKey, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
+	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
 	betStore := &mockFullBetStore{active: true}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
-	token := createTestCheckBetToken(t, partnerPrivKey, boosterPrivKey)
+	token := createTestCheckBetToken(t, partnerPrivKey, boostxPrivKey)
 	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: token})
 
 	req := httptest.NewRequest(http.MethodPost, "/check-bet", bytes.NewReader(body))
@@ -119,13 +119,13 @@ func TestCheckBetHandler_Success(t *testing.T) {
 
 func TestCheckBetHandler_Inactive(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
-	boosterPrivKey, boosterPubKey := generateTestKeyPair(t)
+	boostxPrivKey, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
+	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
 	betStore := &mockFullBetStore{active: false}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
-	token := createTestCheckBetToken(t, partnerPrivKey, boosterPrivKey)
+	token := createTestCheckBetToken(t, partnerPrivKey, boostxPrivKey)
 	body, _ := json.Marshal(checkBetRequest{CheckBetJWT: token})
 
 	req := httptest.NewRequest(http.MethodPost, "/check-bet", bytes.NewReader(body))
@@ -166,9 +166,9 @@ func TestCheckBetHandler_InvalidBody(t *testing.T) {
 
 func TestCheckBetHandler_InvalidToken(t *testing.T) {
 	_, partnerPubKey := generateTestKeyPair(t)
-	_, boosterPubKey := generateTestKeyPair(t)
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
+	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
 	betStore := &mockFullBetStore{active: true}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
@@ -187,9 +187,9 @@ func TestCheckBetHandler_InvalidToken(t *testing.T) {
 
 func TestSetBoostHandler_Success(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
-	boosterPrivKey, boosterPubKey := generateTestKeyPair(t)
+	boostxPrivKey, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{gamepassKey: partnerPubKey, boosterKey: boosterPubKey}
+	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
 	betStore := &mockBetStore{}
 	handler := NewSetBoostHandler(betStore, keyStore)
 
@@ -212,7 +212,7 @@ func TestSetBoostHandler_Success(t *testing.T) {
 	boosterClaims.Booster.Boost = 1.5
 	boosterClaims.Booster.Final = false
 
-	boosterToken, _ := tokens.SignJWT(boosterClaims, boosterPrivKey)
+	boosterToken, _ := tokens.SignJWT(boosterClaims, boostxPrivKey)
 	body, _ := json.Marshal(setBoostRequest{BoosterJWT: boosterToken})
 
 	req := httptest.NewRequest(http.MethodPost, "/set-boost", bytes.NewReader(body))

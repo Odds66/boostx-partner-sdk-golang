@@ -4,67 +4,112 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
+	"fmt"
 )
 
-// StaticKeyStore is a simple key store that holds fixed public keys.
-type StaticKeyStore struct {
-	gamepassKey *ecdsa.PublicKey
-	boosterKey  *ecdsa.PublicKey
+// StaticPublicKeyStore is a simple key store that holds fixed public keys.
+type StaticPublicKeyStore struct {
+	partnerKey *ecdsa.PublicKey
+	boostxKey  *ecdsa.PublicKey
 }
 
-// NewStaticKeyStore creates a StaticKeyStore with fixed public keys.
+// NewStaticPublicKeyStore creates a StaticPublicKeyStore with fixed public keys.
 // Returns an error if either key is nil.
-func NewStaticKeyStore(gamepassKey, boosterKey *ecdsa.PublicKey) (*StaticKeyStore, error) {
-	if gamepassKey == nil {
-		return nil, errors.New("gamepassKey cannot be nil")
+func NewStaticPublicKeyStore(partnerKey, boostxKey *ecdsa.PublicKey) (*StaticPublicKeyStore, error) {
+	if partnerKey == nil {
+		return nil, errors.New("partnerKey cannot be nil")
 	}
-	if boosterKey == nil {
-		return nil, errors.New("boosterKey cannot be nil")
+	if boostxKey == nil {
+		return nil, errors.New("boostxKey cannot be nil")
 	}
-	return &StaticKeyStore{
-		gamepassKey: gamepassKey,
-		boosterKey:  boosterKey,
+	return &StaticPublicKeyStore{
+		partnerKey: partnerKey,
+		boostxKey:  boostxKey,
 	}, nil
 }
 
-// LoadFromFiles creates a StaticKeyStore by loading public keys from files.
-func LoadFromFiles(gamepassKeyPath, boosterKeyPath string) (*StaticKeyStore, error) {
-	gamepassKey, err := LoadPublicKeyFromFile(gamepassKeyPath)
+// LoadFromFiles creates a StaticPublicKeyStore by loading public keys from files.
+func LoadFromFiles(partnerKeyPath, boostxKeyPath string) (*StaticPublicKeyStore, error) {
+	partnerKey, err := LoadPublicKeyFromFile(partnerKeyPath)
 	if err != nil {
 		return nil, err
 	}
 
-	boosterKey, err := LoadPublicKeyFromFile(boosterKeyPath)
+	boostxKey, err := LoadPublicKeyFromFile(boostxKeyPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewStaticKeyStore(gamepassKey, boosterKey)
+	return NewStaticPublicKeyStore(partnerKey, boostxKey)
 }
 
-// LoadFromPEM creates a StaticKeyStore by parsing PEM-encoded public keys.
-func LoadFromPEM(gamepassPEM, boosterPEM []byte) (*StaticKeyStore, error) {
-	gamepassKey, err := LoadPublicKeyFromPEM(gamepassPEM)
+// LoadFromPEM creates a StaticPublicKeyStore by parsing PEM-encoded public keys.
+func LoadFromPEM(partnerPEM, boostxPEM []byte) (*StaticPublicKeyStore, error) {
+	partnerKey, err := LoadPublicKeyFromPEM(partnerPEM)
 	if err != nil {
 		return nil, err
 	}
 
-	boosterKey, err := LoadPublicKeyFromPEM(boosterPEM)
+	boostxKey, err := LoadPublicKeyFromPEM(boostxPEM)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewStaticKeyStore(gamepassKey, boosterKey)
+	return NewStaticPublicKeyStore(partnerKey, boostxKey)
 }
 
-// GamePassPublicKey returns the gamepass public key.
+// PartnerPublicKey returns the partner public key.
 // The partner, user, and bet parameters are ignored for static keys.
-func (s *StaticKeyStore) GamePassPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return s.gamepassKey, nil
+func (s *StaticPublicKeyStore) PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+	return s.partnerKey, nil
 }
 
-// BoosterPublicKey returns the booster public key.
+// BoostxPublicKey returns the Boostx public key.
 // The partner, user, and bet parameters are ignored for static keys.
-func (s *StaticKeyStore) BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return s.boosterKey, nil
+func (s *StaticPublicKeyStore) BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+	return s.boostxKey, nil
+}
+
+// StaticPrivateKeyStore holds a single private key for all signing operations.
+type StaticPrivateKeyStore struct {
+	key *ecdsa.PrivateKey
+}
+
+// NewStaticPrivateKeyStore creates a StaticPrivateKeyStore with the given key.
+// Returns an error if key is nil.
+func NewStaticPrivateKeyStore(key *ecdsa.PrivateKey) (*StaticPrivateKeyStore, error) {
+	if key == nil {
+		return nil, fmt.Errorf("private key must not be nil")
+	}
+	return &StaticPrivateKeyStore{key: key}, nil
+}
+
+// PartnerPrivateKey returns the stored private key, ignoring partner/user/bet.
+func (s *StaticPrivateKeyStore) PartnerPrivateKey(_ context.Context, _, _, _ string) (*ecdsa.PrivateKey, error) {
+	return s.key, nil
+}
+
+// StaticKeyStore combines StaticPublicKeyStore and StaticPrivateKeyStore into a
+// single store that provides both public keys (for verifying inbound tokens) and
+// a private key (for signing outbound tokens).
+type StaticKeyStore struct {
+	StaticPublicKeyStore
+	StaticPrivateKeyStore
+}
+
+// NewStaticKeyStore creates a StaticKeyStore holding both public and private keys.
+// Returns an error if any key is nil.
+func NewStaticKeyStore(partnerKey, boostxKey *ecdsa.PublicKey, privateKey *ecdsa.PrivateKey) (*StaticKeyStore, error) {
+	pub, err := NewStaticPublicKeyStore(partnerKey, boostxKey)
+	if err != nil {
+		return nil, err
+	}
+	priv, err := NewStaticPrivateKeyStore(privateKey)
+	if err != nil {
+		return nil, err
+	}
+	return &StaticKeyStore{
+		StaticPublicKeyStore:  *pub,
+		StaticPrivateKeyStore: *priv,
+	}, nil
 }

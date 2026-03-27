@@ -22,11 +22,11 @@ type exampleKeyStore struct {
 	key *ecdsa.PublicKey
 }
 
-func (ks *exampleKeyStore) GamePassPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
+func (ks *exampleKeyStore) PartnerPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
 	return ks.key, nil
 }
 
-func (ks *exampleKeyStore) BoosterPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
+func (ks *exampleKeyStore) BoostxPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
 	return ks.key, nil
 }
 

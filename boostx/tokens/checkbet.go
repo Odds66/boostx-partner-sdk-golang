@@ -39,13 +39,13 @@ func ExtractCheckBetClaims(checkBetToken string) (partner, user, bet string, err
 }
 
 // ParseCheckBetToken parses a CheckBet token and verifies both the JWT signature
-// (signed by BoostX's booster key) and the embedded GID signature (signed by partner key).
+// (signed by BoostX's key) and the embedded GID signature (signed by partner key).
 func ParseCheckBetToken(
 	checkBetToken string,
-	boosterPublicKey *ecdsa.PublicKey,
+	boostxPublicKey *ecdsa.PublicKey,
 	partnerPublicKey *ecdsa.PublicKey,
 ) (*CheckBet, error) {
-	if boosterPublicKey == nil {
+	if boostxPublicKey == nil {
 		return nil, ErrInvalidPublicKey
 	}
 	if partnerPublicKey == nil {
@@ -53,7 +53,7 @@ func ParseCheckBetToken(
 	}
 
 	var claims checkBetClaims
-	if err := ParseJWT(checkBetToken, &claims, boosterPublicKey); err != nil {
+	if err := ParseJWT(checkBetToken, &claims, boostxPublicKey); err != nil {
 		if errors.Is(err, ErrInvalidSignature) {
 			return nil, err
 		}

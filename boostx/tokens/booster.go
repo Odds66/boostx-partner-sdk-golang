@@ -59,14 +59,14 @@ func ExtractBoosterClaims(boosterToken string) (partner, user, bet string, err e
 // and the embedded GID signature.
 func ParseBoosterToken(
 	boosterToken string,
-	boosterPublicKey *ecdsa.PublicKey,
+	boostxPublicKey *ecdsa.PublicKey,
 	partnerPublicKey *ecdsa.PublicKey,
 ) (*Booster, error) {
 	if partnerPublicKey == nil {
 		return nil, ErrInvalidPublicKey
 	}
 
-	bc, err := parseBoosterClaims(boosterToken, boosterPublicKey)
+	bc, err := parseBoosterClaims(boosterToken, boostxPublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +91,13 @@ func ParseBoosterToken(
 }
 
 // parseBoosterClaims parses and validates a Booster JWT token from BoostX.
-func parseBoosterClaims(tokenString string, boosterPublicKey *ecdsa.PublicKey) (*boosterClaims, error) {
-	if boosterPublicKey == nil {
+func parseBoosterClaims(tokenString string, boostxPublicKey *ecdsa.PublicKey) (*boosterClaims, error) {
+	if boostxPublicKey == nil {
 		return nil, ErrInvalidPublicKey
 	}
 
 	var claims boosterClaims
-	if err := ParseJWT(tokenString, &claims, boosterPublicKey); err != nil {
+	if err := ParseJWT(tokenString, &claims, boostxPublicKey); err != nil {
 		if errors.Is(err, ErrInvalidSignature) {
 			return nil, err
 		}

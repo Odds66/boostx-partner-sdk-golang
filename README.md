@@ -28,12 +28,12 @@ import (
 )
 
 func main() {
-    gamepassPubKey, _ := boostx.LoadPublicKeyFromFile("gamepass_public.pem")
-    boosterPubKey, _ := boostx.LoadPublicKeyFromFile("booster_public.pem")
+    partnerPubKey, _ := boostx.LoadPublicKeyFromFile("partner_public.pem")
+    boostxPubKey, _ := boostx.LoadPublicKeyFromFile("boostx_public.pem")
     betStore := NewYourBetStore()
 
     mux := http.NewServeMux()
-    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, gamepassPubKey, boosterPubKey); err != nil {
+    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPubKey, boostxPubKey); err != nil {
         log.Fatal(err)
     }
 
@@ -131,12 +131,16 @@ token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
 })
 ```
 
-### Creating Settlement Tokens
+### Submitting Settlements
 
-Partners send settlement tokens to BoostX after a bet is settled:
+Use the client to sign and submit settlement tokens to BoostX:
 
 ```go
-token, err := boostx.CreateSettlementToken(privateKey, boostx.SettlementParams{
+partnerKey, _ := boostx.LoadPrivateKeyFromFile("partner_private.pem")
+keyStore, _ := boostx.NewStaticPrivateKeyStore(partnerKey)
+client := boostx.NewClient(keyStore)
+
+err := client.SubmitSettlement(ctx, boostx.SettlementParams{
     Partner:  "partner-id",
     User:     "user-id",
     Bet:      "bet-id",
@@ -146,14 +150,27 @@ token, err := boostx.CreateSettlementToken(privateKey, boostx.SettlementParams{
 })
 ```
 
-### Custom Key Storage
-
-For multi-tenant scenarios, implement `KeyStore`:
+To create a settlement token directly without submitting:
 
 ```go
-type KeyStore interface {
-    GamePassPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
-    BoosterPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+token, err := boostx.CreateSettlementToken(privateKey, boostx.SettlementParams{
+    Partner:  "partner-id",
+    User:     "user-id",
+    Bet:      "bet-id",
+    Result:   "won",
+    Amount:   150.0,
+    Currency: "USD",
+})
+```
+
+### Custom Key Storage
+
+For multi-tenant scenarios, implement `HandlersKeyStore`:
+
+```go
+type HandlersKeyStore interface {
+    PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+    BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 }
 
 boostx.MountHandlersWithKeyStorage(mux, "/api/boostx", betStore, yourKeyStore)

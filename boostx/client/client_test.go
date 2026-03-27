@@ -1,13 +1,32 @@
 package client
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
+	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
+
+func testKeyStore(t *testing.T) *keys.StaticPrivateKeyStore {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	ks, err := keys.NewStaticPrivateKeyStore(key)
+	if err != nil {
+		t.Fatalf("create key store: %v", err)
+	}
+	return ks
+}
 
 func TestSubmitSettlement_Success(t *testing.T) {
 	var got settlementRequest
@@ -31,13 +50,21 @@ func TestSubmitSettlement_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(WithBaseURL(srv.URL))
-	err := c.SubmitSettlement(t.Context(), "eyJhbGciOiJFUzI1NiJ9.test.sig")
+	ks := testKeyStore(t)
+	c := New(ks, WithBaseURL(srv.URL))
+	err := c.SubmitSettlement(t.Context(), tokens.SettlementParams{
+		Partner:  "partner-1",
+		User:     "user-1",
+		Bet:      "bet-1",
+		Result:   "won",
+		Amount:   42.50,
+		Currency: "USD",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.SettlementJWT != "eyJhbGciOiJFUzI1NiJ9.test.sig" {
-		t.Errorf("settlementJWT = %q, want %q", got.SettlementJWT, "eyJhbGciOiJFUzI1NiJ9.test.sig")
+	if got.SettlementJWT == "" {
+		t.Error("settlementJWT is empty, expected a signed JWT")
 	}
 }
 
@@ -83,8 +110,16 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c := New(WithBaseURL(srv.URL))
-			err := c.SubmitSettlement(t.Context(), "some.jwt.token")
+			ks := testKeyStore(t)
+			c := New(ks, WithBaseURL(srv.URL))
+			err := c.SubmitSettlement(t.Context(), tokens.SettlementParams{
+				Partner:  "partner-1",
+				User:     "user-1",
+				Bet:      "bet-1",
+				Result:   "won",
+				Amount:   10.0,
+				Currency: "USD",
+			})
 
 			apiErr, ok := errors.AsType[*APIError](err)
 			if !ok {
@@ -100,13 +135,9 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 	}
 }
 
-func TestSubmitSettlement_EmptyJWT(t *testing.T) {
-	c := New()
-	err := c.SubmitSettlement(t.Context(), "")
+func TestStaticPrivateKeyStore_NilKey(t *testing.T) {
+	_, err := keys.NewStaticPrivateKeyStore(nil)
 	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if err.Error() != "settlementJWT must not be empty" {
-		t.Errorf("error = %q, want %q", err.Error(), "settlementJWT must not be empty")
+		t.Fatal("expected error for nil key, got nil")
 	}
 }

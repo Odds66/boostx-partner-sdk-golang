@@ -20,13 +20,13 @@ func generateTestKeyPair(t *testing.T) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 	return privateKey, &privateKey.PublicKey
 }
 
-func TestNewStaticKeyStore(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
-	_, boosterPubKey := generateTestKeyPair(t)
+func TestNewStaticPublicKeyStore(t *testing.T) {
+	_, partnerPubKey := generateTestKeyPair(t)
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	store, err := NewStaticKeyStore(gamepassPubKey, boosterPubKey)
+	store, err := NewStaticPublicKeyStore(partnerPubKey, boostxPubKey)
 	if err != nil {
-		t.Fatalf("NewStaticKeyStore failed: %v", err)
+		t.Fatalf("NewStaticPublicKeyStore failed: %v", err)
 	}
 
 	if store == nil {
@@ -34,81 +34,81 @@ func TestNewStaticKeyStore(t *testing.T) {
 	}
 }
 
-func TestNewStaticKeyStore_NilGamepassKey(t *testing.T) {
-	_, boosterPubKey := generateTestKeyPair(t)
+func TestNewStaticPublicKeyStore_NilPartnerKey(t *testing.T) {
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	_, err := NewStaticKeyStore(nil, boosterPubKey)
+	_, err := NewStaticPublicKeyStore(nil, boostxPubKey)
 	if err == nil {
-		t.Error("expected error for nil gamepassKey")
+		t.Error("expected error for nil partnerKey")
 	}
 }
 
-func TestNewStaticKeyStore_NilBoosterKey(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
+func TestNewStaticPublicKeyStore_NilBoostxKey(t *testing.T) {
+	_, partnerPubKey := generateTestKeyPair(t)
 
-	_, err := NewStaticKeyStore(gamepassPubKey, nil)
+	_, err := NewStaticPublicKeyStore(partnerPubKey, nil)
 	if err == nil {
-		t.Error("expected error for nil boosterKey")
+		t.Error("expected error for nil boostxKey")
 	}
 }
 
-func TestStaticKeyStore_GamePassPublicKey(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
-	_, boosterPubKey := generateTestKeyPair(t)
+func TestStaticPublicKeyStore_PartnerPublicKey(t *testing.T) {
+	_, partnerPubKey := generateTestKeyPair(t)
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	store, _ := NewStaticKeyStore(gamepassPubKey, boosterPubKey)
+	store, _ := NewStaticPublicKeyStore(partnerPubKey, boostxPubKey)
 
 	ctx := t.Context()
-	key, err := store.GamePassPublicKey(ctx, "partner", "user", "bet")
+	key, err := store.PartnerPublicKey(ctx, "partner", "user", "bet")
 	if err != nil {
-		t.Fatalf("GamePassPublicKey failed: %v", err)
+		t.Fatalf("PartnerPublicKey failed: %v", err)
 	}
 
-	if key != gamepassPubKey {
+	if key != partnerPubKey {
 		t.Error("returned key does not match expected key")
 	}
 }
 
-func TestStaticKeyStore_BoosterPublicKey(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
-	_, boosterPubKey := generateTestKeyPair(t)
+func TestStaticPublicKeyStore_BoostxPublicKey(t *testing.T) {
+	_, partnerPubKey := generateTestKeyPair(t)
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	store, _ := NewStaticKeyStore(gamepassPubKey, boosterPubKey)
+	store, _ := NewStaticPublicKeyStore(partnerPubKey, boostxPubKey)
 
 	ctx := t.Context()
-	key, err := store.BoosterPublicKey(ctx, "partner", "user", "bet")
+	key, err := store.BoostxPublicKey(ctx, "partner", "user", "bet")
 	if err != nil {
-		t.Fatalf("BoosterPublicKey failed: %v", err)
+		t.Fatalf("BoostxPublicKey failed: %v", err)
 	}
 
-	if key != boosterPubKey {
+	if key != boostxPubKey {
 		t.Error("returned key does not match expected key")
 	}
 }
 
 func TestLoadFromFiles(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
-	_, boosterPubKey := generateTestKeyPair(t)
+	_, partnerPubKey := generateTestKeyPair(t)
+	_, boostxPubKey := generateTestKeyPair(t)
 
 	tmpDir := t.TempDir()
 
-	// Write gamepass public key
-	gamepassPubBytes, _ := x509.MarshalPKIXPublicKey(gamepassPubKey)
-	gamepassPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: gamepassPubBytes})
-	gamepassPath := filepath.Join(tmpDir, "gamepass.pem")
-	if err := os.WriteFile(gamepassPath, gamepassPEM, 0644); err != nil {
-		t.Fatalf("failed to write gamepass key: %v", err)
+	// Write partner public key
+	partnerPubBytes, _ := x509.MarshalPKIXPublicKey(partnerPubKey)
+	partnerPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: partnerPubBytes})
+	partnerPath := filepath.Join(tmpDir, "partner.pem")
+	if err := os.WriteFile(partnerPath, partnerPEM, 0644); err != nil {
+		t.Fatalf("failed to write partner key: %v", err)
 	}
 
-	// Write booster public key
-	boosterPubBytes, _ := x509.MarshalPKIXPublicKey(boosterPubKey)
-	boosterPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boosterPubBytes})
-	boosterPath := filepath.Join(tmpDir, "booster.pem")
-	if err := os.WriteFile(boosterPath, boosterPEM, 0644); err != nil {
-		t.Fatalf("failed to write booster key: %v", err)
+	// Write Boostx public key
+	boostxPubBytes, _ := x509.MarshalPKIXPublicKey(boostxPubKey)
+	boostxPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boostxPubBytes})
+	boostxPath := filepath.Join(tmpDir, "boostx.pem")
+	if err := os.WriteFile(boostxPath, boostxPEM, 0644); err != nil {
+		t.Fatalf("failed to write boostx key: %v", err)
 	}
 
-	store, err := LoadFromFiles(gamepassPath, boosterPath)
+	store, err := LoadFromFiles(partnerPath, boostxPath)
 	if err != nil {
 		t.Fatalf("LoadFromFiles failed: %v", err)
 	}
@@ -118,33 +118,33 @@ func TestLoadFromFiles(t *testing.T) {
 	}
 }
 
-func TestLoadFromFiles_GamepassNotFound(t *testing.T) {
-	_, boosterPubKey := generateTestKeyPair(t)
+func TestLoadFromFiles_PartnerNotFound(t *testing.T) {
+	_, boostxPubKey := generateTestKeyPair(t)
 
 	tmpDir := t.TempDir()
 
-	boosterPubBytes, _ := x509.MarshalPKIXPublicKey(boosterPubKey)
-	boosterPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boosterPubBytes})
-	boosterPath := filepath.Join(tmpDir, "booster.pem")
-	os.WriteFile(boosterPath, boosterPEM, 0644)
+	boostxPubBytes, _ := x509.MarshalPKIXPublicKey(boostxPubKey)
+	boostxPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boostxPubBytes})
+	boostxPath := filepath.Join(tmpDir, "boostx.pem")
+	os.WriteFile(boostxPath, boostxPEM, 0644)
 
-	_, err := LoadFromFiles("/nonexistent/gamepass.pem", boosterPath)
+	_, err := LoadFromFiles("/nonexistent/partner.pem", boostxPath)
 	if err == nil {
-		t.Error("expected error for missing gamepass file")
+		t.Error("expected error for missing partner file")
 	}
 }
 
 func TestLoadFromPEM(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
-	_, boosterPubKey := generateTestKeyPair(t)
+	_, partnerPubKey := generateTestKeyPair(t)
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	gamepassPubBytes, _ := x509.MarshalPKIXPublicKey(gamepassPubKey)
-	gamepassPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: gamepassPubBytes})
+	partnerPubBytes, _ := x509.MarshalPKIXPublicKey(partnerPubKey)
+	partnerPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: partnerPubBytes})
 
-	boosterPubBytes, _ := x509.MarshalPKIXPublicKey(boosterPubKey)
-	boosterPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boosterPubBytes})
+	boostxPubBytes, _ := x509.MarshalPKIXPublicKey(boostxPubKey)
+	boostxPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boostxPubBytes})
 
-	store, err := LoadFromPEM(gamepassPEM, boosterPEM)
+	store, err := LoadFromPEM(partnerPEM, boostxPEM)
 	if err != nil {
 		t.Fatalf("LoadFromPEM failed: %v", err)
 	}
@@ -154,26 +154,26 @@ func TestLoadFromPEM(t *testing.T) {
 	}
 }
 
-func TestLoadFromPEM_InvalidGamepassPEM(t *testing.T) {
-	_, boosterPubKey := generateTestKeyPair(t)
+func TestLoadFromPEM_InvalidPartnerPEM(t *testing.T) {
+	_, boostxPubKey := generateTestKeyPair(t)
 
-	boosterPubBytes, _ := x509.MarshalPKIXPublicKey(boosterPubKey)
-	boosterPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boosterPubBytes})
+	boostxPubBytes, _ := x509.MarshalPKIXPublicKey(boostxPubKey)
+	boostxPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: boostxPubBytes})
 
-	_, err := LoadFromPEM([]byte("invalid pem"), boosterPEM)
+	_, err := LoadFromPEM([]byte("invalid pem"), boostxPEM)
 	if err == nil {
-		t.Error("expected error for invalid gamepass PEM")
+		t.Error("expected error for invalid partner PEM")
 	}
 }
 
-func TestLoadFromPEM_InvalidBoosterPEM(t *testing.T) {
-	_, gamepassPubKey := generateTestKeyPair(t)
+func TestLoadFromPEM_InvalidBoostxPEM(t *testing.T) {
+	_, partnerPubKey := generateTestKeyPair(t)
 
-	gamepassPubBytes, _ := x509.MarshalPKIXPublicKey(gamepassPubKey)
-	gamepassPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: gamepassPubBytes})
+	partnerPubBytes, _ := x509.MarshalPKIXPublicKey(partnerPubKey)
+	partnerPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: partnerPubBytes})
 
-	_, err := LoadFromPEM(gamepassPEM, []byte("invalid pem"))
+	_, err := LoadFromPEM(partnerPEM, []byte("invalid pem"))
 	if err == nil {
-		t.Error("expected error for invalid booster PEM")
+		t.Error("expected error for invalid boostx PEM")
 	}
 }

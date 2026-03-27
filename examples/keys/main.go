@@ -14,7 +14,7 @@ import (
 func main() {
 	// Generate test keys (in production, load from secure storage)
 	partnerPrivateKey, partnerPublicKey := generateTestKeyPair("Partner")
-	boosterPrivateKey, boosterPublicKey := generateTestKeyPair("BoostX")
+	boostxPrivateKey, boostxPublicKey := generateTestKeyPair("BoostX")
 
 	// === PARTNER SIDE: Create GamePass ===
 	fmt.Println("=== Creating GamePass (Partner -> BoostX) ===")
@@ -53,13 +53,13 @@ func main() {
 	// === BOOSTX SIDE: Create Booster response (simulated) ===
 	fmt.Println("=== Creating Booster Response (BoostX -> Partner) ===")
 
-	boosterToken := createSimulatedBoosterToken(boosterPrivateKey, partnerPrivateKey, 1.5, 3, true, false)
+	boosterToken := createSimulatedBoosterToken(boostxPrivateKey, partnerPrivateKey, 1.5, 3, true, false)
 	fmt.Printf("Booster Token:\n%s\n\n", boosterToken)
 
 	// === PARTNER SIDE: Validate Booster and calculate final coefficient ===
 	fmt.Println("=== Validating Booster (Partner Side) ===")
 
-	result, err := boostxtokens.ParseBoosterToken(boosterToken, boosterPublicKey, partnerPublicKey)
+	result, err := boostxtokens.ParseBoosterToken(boosterToken, boostxPublicKey, partnerPublicKey)
 	if err != nil {
 		log.Fatalf("Failed to parse Booster: %v", err)
 	}
@@ -125,7 +125,7 @@ func generateTestKeyPair(name string) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 // createSimulatedBoosterToken creates a Booster token as BoostX would.
 // This is for demonstration purposes only.
 func createSimulatedBoosterToken(
-	boosterPrivateKey *ecdsa.PrivateKey,
+	boostxPrivateKey *ecdsa.PrivateKey,
 	partnerPrivateKey *ecdsa.PrivateKey,
 	boost float64,
 	round int,
@@ -159,7 +159,7 @@ func createSimulatedBoosterToken(
 		},
 	}
 
-	tokenString, err := boostxtokens.SignJWT(claims, boosterPrivateKey)
+	tokenString, err := boostxtokens.SignJWT(claims, boostxPrivateKey)
 	if err != nil {
 		log.Fatalf("Failed to create simulated Booster token: %v", err)
 	}

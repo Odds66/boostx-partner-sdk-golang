@@ -32,6 +32,7 @@ func (e *APIError) Error() string {
 
 // Client makes outbound HTTP calls to the BoostX Partner API.
 type Client struct {
+	keys       KeyStore
 	baseURL    string
 	httpClient *http.Client
 }
@@ -49,9 +50,10 @@ func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
 }
 
-// New creates a Client with the given options.
-func New(opts ...Option) *Client {
+// New creates a Client with the given key store and options.
+func New(keys KeyStore, opts ...Option) *Client {
 	c := &Client{
+		keys:       keys,
 		baseURL:    DefaultBaseURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}

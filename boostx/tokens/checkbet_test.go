@@ -9,7 +9,7 @@ import (
 
 func TestParseCheckBetToken(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKey(t)
-	boosterPrivKey, boosterPubKey := generateTestKey(t)
+	boostxPrivKey, boostxPubKey := generateTestKey(t)
 
 	gid, err := BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 	if err != nil {
@@ -25,12 +25,12 @@ func TestParseCheckBetToken(t *testing.T) {
 		},
 	}
 
-	token, err := SignJWT(claims, boosterPrivKey)
+	token, err := SignJWT(claims, boostxPrivKey)
 	if err != nil {
 		t.Fatalf("failed to sign CheckBet token: %v", err)
 	}
 
-	checkBet, err := ParseCheckBetToken(token, boosterPubKey, partnerPubKey)
+	checkBet, err := ParseCheckBetToken(token, boostxPubKey, partnerPubKey)
 	if err != nil {
 		t.Fatalf("ParseCheckBetToken failed: %v", err)
 	}
@@ -48,20 +48,20 @@ func TestParseCheckBetToken(t *testing.T) {
 
 func TestParseCheckBetToken_NilKeys(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKey(t)
-	boosterPrivKey, boosterPubKey := generateTestKey(t)
+	boostxPrivKey, boostxPubKey := generateTestKey(t)
 
 	gid, _ := BuildGID("partner", "user", "bet", partnerPrivKey)
 	claims := checkBetClaims{
 		CheckBet: checkBetPayload{GID: *gid},
 	}
-	token, _ := SignJWT(claims, boosterPrivKey)
+	token, _ := SignJWT(claims, boostxPrivKey)
 
 	_, err := ParseCheckBetToken(token, nil, partnerPubKey)
 	if !errors.Is(err, ErrInvalidPublicKey) {
-		t.Errorf("expected ErrInvalidPublicKey with nil boosterKey, got %v", err)
+		t.Errorf("expected ErrInvalidPublicKey with nil boostxKey, got %v", err)
 	}
 
-	_, err = ParseCheckBetToken(token, boosterPubKey, nil)
+	_, err = ParseCheckBetToken(token, boostxPubKey, nil)
 	if !errors.Is(err, ErrInvalidPublicKey) {
 		t.Errorf("expected ErrInvalidPublicKey with nil partnerKey, got %v", err)
 	}
@@ -69,16 +69,16 @@ func TestParseCheckBetToken_NilKeys(t *testing.T) {
 
 func TestParseCheckBetToken_InvalidSignature(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKey(t)
-	boosterPrivKey, _ := generateTestKey(t)
-	_, wrongBoosterPubKey := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
+	_, wrongBoostxPubKey := generateTestKey(t)
 
 	gid, _ := BuildGID("partner", "user", "bet", partnerPrivKey)
 	claims := checkBetClaims{
 		CheckBet: checkBetPayload{GID: *gid},
 	}
-	token, _ := SignJWT(claims, boosterPrivKey)
+	token, _ := SignJWT(claims, boostxPrivKey)
 
-	_, err := ParseCheckBetToken(token, wrongBoosterPubKey, partnerPubKey)
+	_, err := ParseCheckBetToken(token, wrongBoostxPubKey, partnerPubKey)
 	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("expected ErrInvalidSignature, got %v", err)
 	}
@@ -86,7 +86,7 @@ func TestParseCheckBetToken_InvalidSignature(t *testing.T) {
 
 func TestCheckBetToken_WireFormat(t *testing.T) {
 	partnerPrivKey, _ := generateTestKey(t)
-	boosterPrivKey, _ := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
 
 	gid, _ := BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 
@@ -97,7 +97,7 @@ func TestCheckBetToken_WireFormat(t *testing.T) {
 		},
 	}
 
-	token, _ := SignJWT(claims, boosterPrivKey)
+	token, _ := SignJWT(claims, boostxPrivKey)
 
 	var raw map[string]json.RawMessage
 	if err := ExtractJWTClaims(token, &raw); err != nil {
@@ -119,13 +119,13 @@ func TestCheckBetToken_WireFormat(t *testing.T) {
 
 func TestExtractCheckBetClaims(t *testing.T) {
 	partnerPrivKey, _ := generateTestKey(t)
-	boosterPrivKey, _ := generateTestKey(t)
+	boostxPrivKey, _ := generateTestKey(t)
 
 	gid, _ := BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
 	claims := checkBetClaims{
 		CheckBet: checkBetPayload{GID: *gid},
 	}
-	token, _ := SignJWT(claims, boosterPrivKey)
+	token, _ := SignJWT(claims, boostxPrivKey)
 
 	partner, user, bet, err := ExtractCheckBetClaims(token)
 	if err != nil {

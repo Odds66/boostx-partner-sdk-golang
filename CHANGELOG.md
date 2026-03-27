@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.6.1
+
+### Breaking Changes
+- Rename `GamePassPublicKey` to `PartnerPublicKey`
+- Rename `BoosterPublicKey` to `BoostxPublicKey`
+- Rename `SettlementPrivateKey` to `PartnerPrivateKey`
+- Split `StaticKeyStore` into `StaticPublicKeyStore` + `StaticPrivateKeyStore`
+- `client.New()` now requires a `KeyStore` as first argument
+- `SubmitSettlement` accepts `SettlementParams` instead of raw JWT string
+
+### New Features
+- Add `client.KeyStore` interface for resolving signing keys
+- Add `StaticPrivateKeyStore` for single-key signing scenarios
+- Add `StaticKeyStore` composite type combining public + private key stores
+
+## v0.5.0
+
+### Breaking Changes
+- Rename `/setBoost` route to `/set-boost` (kebab-case, matches backend)
+- Rename `/checkBet` route to `/check-bet` (kebab-case, matches backend)
+- `/set-boost` now returns `{"result":{"ok":true}}` instead of bare 200
+- `/check-bet` now returns `{"result":{"active":bool}}` instead of `{"active":bool}`
+- Upgrade minimum Go version from 1.21 to 1.26
+
+### New Features
+- Add testable examples for tokens, handlers, and client packages
+- Add GitHub Actions CI workflow with test and vet steps
+- Add method-aware ServeMux routing
+- Add `t.Context()` and generic `errors.AsType[T]` usage
+
 ## v0.4.0
 
 ### New Features
