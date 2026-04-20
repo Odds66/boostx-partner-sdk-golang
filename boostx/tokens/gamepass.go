@@ -11,31 +11,27 @@ import (
 // GamePass represents the parsed claims from a GamePass JWT token.
 // This token is created by the Partner and sent to BoostX.
 type GamePass struct {
-	GID                          // Embedded GID fields (Partner, User, Bet, Signature)
-	Amount         float64       // Stake amount
-	Currency       string        // Currency code (e.g., "USD", "EUR")
-	X              float64       // Initial coefficient (xrange.init)
-	XMin           float64       // Minimum coefficient (xrange.min)
-	XMax           float64       // Maximum coefficient (xrange.max)
-	EventName      string        // Optional event name
-	EventMarket    string        // Optional event market
-	EventSelection string        // Optional event selection
+	GID                // Embedded GID fields (Partner, User, Bet, Signature)
+	Amount     float64 // Stake amount
+	Currency   string  // Currency code (e.g., "USD", "EUR")
+	X          float64 // Initial coefficient (xrange.init)
+	XMin       float64 // Minimum coefficient (xrange.min)
+	XMax       float64 // Maximum coefficient (xrange.max)
+	EventTitle string  // Optional event title
 	RegisteredClaims
 }
 
 // GamePassParams contains the parameters for creating a GamePass token.
 type GamePassParams struct {
-	Partner        string
-	User           string
-	Bet            string
-	Amount         float64
-	Currency       string
-	X              float64
-	XMin           float64
-	XMax           float64
-	EventName      string // optional
-	EventMarket    string // optional
-	EventSelection string // optional
+	Partner    string
+	User       string
+	Bet        string
+	Amount     float64
+	Currency   string
+	X          float64
+	XMin       float64
+	XMax       float64
+	EventTitle string // optional
 }
 
 // Internal serialization types for the nested JWT payload.
@@ -52,9 +48,7 @@ type xRangeClaims struct {
 }
 
 type eventClaims struct {
-	Name      string `json:"name"`
-	Market    string `json:"market"`
-	Selection string `json:"selection"`
+	Title string `json:"title"`
 }
 
 type gamePassPayload struct {
@@ -129,12 +123,8 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 		},
 	}
 
-	if params.EventName != "" || params.EventMarket != "" || params.EventSelection != "" {
-		claims.GamePass.Event = &eventClaims{
-			Name:      params.EventName,
-			Market:    params.EventMarket,
-			Selection: params.EventSelection,
-		}
+	if params.EventTitle != "" {
+		claims.GamePass.Event = &eventClaims{Title: params.EventTitle}
 	}
 
 	return SignJWT(claims, privateKey)
@@ -153,11 +143,9 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
 	}
 
-	var eventName, eventMarket, eventSelection string
+	var eventTitle string
 	if gp.Event != nil {
-		eventName = gp.Event.Name
-		eventMarket = gp.Event.Market
-		eventSelection = gp.Event.Selection
+		eventTitle = gp.Event.Title
 	}
 
 	return &GamePass{
@@ -167,9 +155,7 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 		X:                gp.XRange.Init,
 		XMin:             gp.XRange.Min,
 		XMax:             gp.XRange.Max,
-		EventName:        eventName,
-		EventMarket:      eventMarket,
-		EventSelection:   eventSelection,
+		EventTitle:       eventTitle,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
 }
@@ -202,11 +188,9 @@ func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePa
 		return nil, fmt.Errorf("failed to verify GID: %w", err)
 	}
 
-	var eventName, eventMarket, eventSelection string
+	var eventTitle string
 	if gp.Event != nil {
-		eventName = gp.Event.Name
-		eventMarket = gp.Event.Market
-		eventSelection = gp.Event.Selection
+		eventTitle = gp.Event.Title
 	}
 
 	return &GamePass{
@@ -216,9 +200,7 @@ func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePa
 		X:                gp.XRange.Init,
 		XMin:             gp.XRange.Min,
 		XMax:             gp.XRange.Max,
-		EventName:        eventName,
-		EventMarket:      eventMarket,
-		EventSelection:   eventSelection,
+		EventTitle:       eventTitle,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
 }

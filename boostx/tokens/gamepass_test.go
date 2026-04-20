@@ -62,21 +62,21 @@ func TestCreateGamePassToken(t *testing.T) {
 	}
 }
 
-func TestCreateGamePassToken_EventFields(t *testing.T) {
+func TestCreateGamePassToken_EventTitle(t *testing.T) {
 	privateKey, publicKey := generateTestKey(t)
 
+	const eventTitle = "Real Madrid vs Barcelona — Match Winner: Real Madrid"
+
 	token, err := CreateGamePassToken(privateKey, GamePassParams{
-		Partner:        "partner-123",
-		User:           "user-456",
-		Bet:            "bet-789",
-		Amount:         100.0,
-		Currency:       "USD",
-		X:              2.0,
-		XMin:           1.1,
-		XMax:           10.0,
-		EventName:      "Real Madrid vs Barcelona",
-		EventMarket:    "Match Winner",
-		EventSelection: "Real Madrid",
+		Partner:    "partner-123",
+		User:       "user-456",
+		Bet:        "bet-789",
+		Amount:     100.0,
+		Currency:   "USD",
+		X:          2.0,
+		XMin:       1.1,
+		XMax:       10.0,
+		EventTitle: eventTitle,
 	})
 	if err != nil {
 		t.Fatalf("CreateGamePassToken failed: %v", err)
@@ -87,14 +87,8 @@ func TestCreateGamePassToken_EventFields(t *testing.T) {
 		t.Fatalf("ParseGamePassToken failed: %v", err)
 	}
 
-	if gamePass.EventName != "Real Madrid vs Barcelona" {
-		t.Errorf("expected event_name=%q, got %q", "Real Madrid vs Barcelona", gamePass.EventName)
-	}
-	if gamePass.EventMarket != "Match Winner" {
-		t.Errorf("expected event_market=%q, got %q", "Match Winner", gamePass.EventMarket)
-	}
-	if gamePass.EventSelection != "Real Madrid" {
-		t.Errorf("expected event_selection=%q, got %q", "Real Madrid", gamePass.EventSelection)
+	if gamePass.EventTitle != eventTitle {
+		t.Errorf("expected event_title=%q, got %q", eventTitle, gamePass.EventTitle)
 	}
 
 	// Also verify via ExtractGamePassClaims
@@ -102,14 +96,8 @@ func TestCreateGamePassToken_EventFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractGamePassClaims failed: %v", err)
 	}
-	if extracted.EventName != "Real Madrid vs Barcelona" {
-		t.Errorf("extract: expected event_name=%q, got %q", "Real Madrid vs Barcelona", extracted.EventName)
-	}
-	if extracted.EventMarket != "Match Winner" {
-		t.Errorf("extract: expected event_market=%q, got %q", "Match Winner", extracted.EventMarket)
-	}
-	if extracted.EventSelection != "Real Madrid" {
-		t.Errorf("extract: expected event_selection=%q, got %q", "Real Madrid", extracted.EventSelection)
+	if extracted.EventTitle != eventTitle {
+		t.Errorf("extract: expected event_title=%q, got %q", eventTitle, extracted.EventTitle)
 	}
 }
 

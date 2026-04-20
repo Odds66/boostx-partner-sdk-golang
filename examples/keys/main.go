@@ -20,17 +20,15 @@ func main() {
 	fmt.Println("=== Creating GamePass (Partner -> BoostX) ===")
 
 	gamePassToken, err := boostx.CreateGamePassToken(partnerPrivateKey, boostx.GamePassParams{
-		Partner:        "partner-123",
-		User:           "user-456",
-		Bet:            "bet-789",
-		Amount:         100.0,
-		Currency:       "USD",
-		X:              2.0,
-		XMin:           1.1,
-		XMax:           10.0,
-		EventName:      "Real Madrid vs Barcelona",
-		EventMarket:    "Match Winner",
-		EventSelection: "Real Madrid",
+		Partner:    "partner-123",
+		User:       "user-456",
+		Bet:        "bet-789",
+		Amount:     100.0,
+		Currency:   "USD",
+		X:          2.0,
+		XMin:       1.1,
+		XMax:       10.0,
+		EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create GamePass: %v", err)

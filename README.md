@@ -117,17 +117,15 @@ For testing, partners can create GamePass tokens:
 
 ```go
 token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
-    Partner:        "partner-id",
-    User:           "user-id",
-    Bet:            "bet-id",
-    Amount:         100.0,
-    Currency:       "USD",
-    X:              2.0,
-    XMin:           1.1,
-    XMax:           10.0,
-    EventName:      "Real Madrid vs Barcelona",  // optional
-    EventMarket:    "Match Winner",               // optional
-    EventSelection: "Real Madrid",                // optional
+    Partner:    "partner-id",
+    User:       "user-id",
+    Bet:        "bet-id",
+    Amount:     100.0,
+    Currency:   "USD",
+    X:          2.0,
+    XMin:       1.1,
+    XMax:       10.0,
+    EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid", // optional
 })
 ```
 

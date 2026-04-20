@@ -47,17 +47,15 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/test/gamepass", func(w http.ResponseWriter, r *http.Request) {
 		token, err := boostx.CreateGamePassToken(partnerPrivateKey, boostx.GamePassParams{
-			Partner:        partnerID,
-			User:           userID,
-			Bet:            betID,
-			Amount:         100.0,
-			Currency:       "USD",
-			X:              2.0,
-			XMin:           1.1,
-			XMax:           10.0,
-			EventName:      "Real Madrid vs Barcelona",
-			EventMarket:    "Match Winner",
-			EventSelection: "Real Madrid",
+			Partner:    partnerID,
+			User:       userID,
+			Bet:        betID,
+			Amount:     100.0,
+			Currency:   "USD",
+			X:          2.0,
+			XMin:       1.1,
+			XMax:       10.0,
+			EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

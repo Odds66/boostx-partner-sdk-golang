@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.0
+
+### Breaking Changes
+- Consolidate GamePass `event` payload from `{name, market, selection}` into single `{title}` field (matches backend wire format)
+- `GamePass` struct: `EventName`, `EventMarket`, `EventSelection` → `EventTitle`
+- `GamePassParams`: `EventName`, `EventMarket`, `EventSelection` → `EventTitle`
+- JWT wire format: `event.name` / `event.market` / `event.selection` → `event.title`
+
 ## v0.6.1
 
 ### Breaking Changes
