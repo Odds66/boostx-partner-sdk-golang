@@ -23,19 +23,27 @@ func generateTestKeyPair(t *testing.T) (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 	return privateKey, &privateKey.PublicKey
 }
 
-// mockKeyStore implements KeyStore for testing
+// mockKeyStore implements KeyStore for testing. pubErr governs public-key
+// lookups (PartnerPublicKey / BoostxPublicKey); privErr is independent so
+// tests can simulate "private key lookup fails" in isolation.
 type mockKeyStore struct {
-	partnerKey *ecdsa.PublicKey
-	boostxKey  *ecdsa.PublicKey
-	err        error
+	partnerPubKey  *ecdsa.PublicKey
+	partnerPrivKey *ecdsa.PrivateKey
+	boostxPubKey   *ecdsa.PublicKey
+	pubErr         error
+	privErr        error
 }
 
 func (m *mockKeyStore) PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return m.partnerKey, m.err
+	return m.partnerPubKey, m.pubErr
+}
+
+func (m *mockKeyStore) PartnerPrivateKey(ctx context.Context, partner, user, bet string) (*ecdsa.PrivateKey, error) {
+	return m.partnerPrivKey, m.privErr
 }
 
 func (m *mockKeyStore) BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
-	return m.boostxKey, m.err
+	return m.boostxPubKey, m.pubErr
 }
 
 // mockBetStore implements BetStoreUpdater (SetBoost only)
@@ -88,7 +96,7 @@ func TestCheckBetHandler_Success(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
 	boostxPrivKey, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
+	keyStore := &mockKeyStore{partnerPubKey: partnerPubKey, boostxPubKey: boostxPubKey}
 	betStore := &mockFullBetStore{active: true}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
@@ -121,7 +129,7 @@ func TestCheckBetHandler_Inactive(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
 	boostxPrivKey, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
+	keyStore := &mockKeyStore{partnerPubKey: partnerPubKey, boostxPubKey: boostxPubKey}
 	betStore := &mockFullBetStore{active: false}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
@@ -168,7 +176,7 @@ func TestCheckBetHandler_InvalidToken(t *testing.T) {
 	_, partnerPubKey := generateTestKeyPair(t)
 	_, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
+	keyStore := &mockKeyStore{partnerPubKey: partnerPubKey, boostxPubKey: boostxPubKey}
 	betStore := &mockFullBetStore{active: true}
 	handler := NewCheckBetHandler(betStore, keyStore)
 
@@ -189,7 +197,7 @@ func TestSetBoostHandler_Success(t *testing.T) {
 	partnerPrivKey, partnerPubKey := generateTestKeyPair(t)
 	boostxPrivKey, boostxPubKey := generateTestKeyPair(t)
 
-	keyStore := &mockKeyStore{partnerKey: partnerPubKey, boostxKey: boostxPubKey}
+	keyStore := &mockKeyStore{partnerPubKey: partnerPubKey, boostxPubKey: boostxPubKey}
 	betStore := &mockBetStore{}
 	handler := NewSetBoostHandler(betStore, keyStore)
 

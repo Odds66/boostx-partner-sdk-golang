@@ -65,7 +65,7 @@ func main() {
 		w.Write([]byte(token))
 	})
 
-	if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPublicKey, boostxPublicKey); err != nil {
+	if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPublicKey, boostxPublicKey, partnerPrivateKey); err != nil {
 		log.Fatalf("Failed to mount handlers: %v", err)
 	}
 
@@ -73,9 +73,10 @@ func main() {
 	addr := ":8080"
 	fmt.Printf("Starting server on %s\n", addr)
 	fmt.Println("Endpoints:")
-	fmt.Println("  POST /api/boostx/check-bet  - Check if bet is active (optional)")
-	fmt.Println("  POST /api/boostx/set-boost  - Receive boost update")
-	fmt.Println("  GET  /api/test/gamepass     - Generate test GamePass token")
+	fmt.Println("  POST /api/boostx/check-bet   - Check if bet is active (optional)")
+	fmt.Println("  POST /api/boostx/set-boost   - Receive boost update")
+	fmt.Println("  POST /api/boostx/verify-keys - Signed round-trip key verification")
+	fmt.Println("  GET  /api/test/gamepass      - Generate test GamePass token")
 	fmt.Println()
 
 	log.Fatal(http.ListenAndServe(addr, mux))

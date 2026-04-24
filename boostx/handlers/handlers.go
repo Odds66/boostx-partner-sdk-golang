@@ -37,13 +37,14 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: message})
 }
 
-// Mount registers handlers on the given mux at the specified prefix.
-// The /set-boost endpoint is always registered.
-// The /check-bet endpoint is registered only if betStore implements BetStoreChecker.
+// Mount registers the partner-side BoostX handlers on mux under prefix:
+// POST /set-boost and POST /verify-keys always; POST /check-bet when betStore
+// implements BetStoreChecker. A trailing slash on prefix is trimmed.
 func Mount(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore KeyStore) {
 	prefix = strings.TrimSuffix(prefix, "/")
 	if cbs, ok := betStore.(BetStoreChecker); ok {
 		mux.Handle("POST "+prefix+"/check-bet", NewCheckBetHandler(cbs, keyStore))
 	}
 	mux.Handle("POST "+prefix+"/set-boost", NewSetBoostHandler(betStore, keyStore))
+	mux.Handle("POST "+prefix+"/verify-keys", NewVerifyKeysHandler(keyStore))
 }

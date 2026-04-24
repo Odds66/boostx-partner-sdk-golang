@@ -30,10 +30,11 @@ import (
 func main() {
     partnerPubKey, _ := boostx.LoadPublicKeyFromFile("partner_public.pem")
     boostxPubKey, _ := boostx.LoadPublicKeyFromFile("boostx_public.pem")
+    partnerPrivKey, _ := boostx.LoadPrivateKeyFromFile("partner_private.pem")
     betStore := NewYourBetStore()
 
     mux := http.NewServeMux()
-    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPubKey, boostxPubKey); err != nil {
+    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPubKey, boostxPubKey, partnerPrivKey); err != nil {
         log.Fatal(err)
     }
 
@@ -71,6 +72,7 @@ See [pkg.go.dev](https://pkg.go.dev/github.com/Odds66/boostx-partner-sdk-golang/
 |----------|--------|-------------|
 | `{prefix}/check-bet` | POST | Check if a bet is active *(optional, requires BetStoreChecker)* |
 | `{prefix}/set-boost` | POST | Receive boost updates |
+| `{prefix}/verify-keys` | POST | Signed round-trip key-pair verification |
 
 ### POST /check-bet
 
@@ -86,12 +88,29 @@ Request body:
 {"boosterJWT": "eyJhbGciOiJFUzI1NiJ9..."}
 ```
 
+### POST /verify-keys
+
+Signed round-trip that confirms BoostX and the partner hold each other's public keys.
+
+Request body:
+```json
+{"verifyKeysJWT": "eyJhbGciOiJFUzI1NiJ9..."}
+```
+
+Response body:
+```json
+{"result": {"responseJWT": "eyJhbGciOiJFUzI1NiJ9..."}}
+```
+
+Error body (400): `{"error": "invalid verifyKeysJWT: <reason>"}` — reason ∈ `signature`, `iss-aud`, `stale`, `shape`, `nonce-format`.
+
 ## Error Handling
 
 The SDK provides typed errors:
 
 - `ErrInvalidPrivateKey` / `ErrInvalidPublicKey` - Invalid ECDSA key
-- `ErrInvalidGamePass` / `ErrInvalidBooster` / `ErrInvalidCheckBet` / `ErrInvalidSettlement` - Invalid token
+- `ErrInvalidGamePass` / `ErrInvalidBooster` / `ErrInvalidCheckBet` / `ErrInvalidSettlement` / `ErrInvalidVerifyKeys` - Invalid token
+- `ErrVerifyKeysIssAud` / `ErrVerifyKeysStale` / `ErrVerifyKeysNonce` - VerifyKeys-specific reasons
 - `ErrInvalidGID` - Invalid GID struct
 - `ErrInvalidSignature` - Invalid token signature
 - `ErrMissingClaim` / `ErrInvalidClaim` - Claim issues
@@ -168,6 +187,7 @@ For multi-tenant scenarios, implement `HandlersKeyStore`:
 ```go
 type HandlersKeyStore interface {
     PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+    PartnerPrivateKey(ctx context.Context, partner, user, bet string) (*ecdsa.PrivateKey, error)
     BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
 }
 

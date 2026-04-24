@@ -19,15 +19,20 @@ func (s *exampleBetStore) SetBoost(_ context.Context, _ *tokens.Booster) error {
 
 // exampleKeyStore is a minimal KeyStore for demonstration.
 type exampleKeyStore struct {
-	key *ecdsa.PublicKey
+	pub  *ecdsa.PublicKey
+	priv *ecdsa.PrivateKey
 }
 
 func (ks *exampleKeyStore) PartnerPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
-	return ks.key, nil
+	return ks.pub, nil
+}
+
+func (ks *exampleKeyStore) PartnerPrivateKey(_ context.Context, _, _, _ string) (*ecdsa.PrivateKey, error) {
+	return ks.priv, nil
 }
 
 func (ks *exampleKeyStore) BoostxPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
-	return ks.key, nil
+	return ks.pub, nil
 }
 
 func ExampleMount() {
@@ -38,7 +43,7 @@ func ExampleMount() {
 	}
 
 	betStore := &exampleBetStore{}
-	keyStore := &exampleKeyStore{key: &key.PublicKey}
+	keyStore := &exampleKeyStore{pub: &key.PublicKey, priv: key}
 
 	mux := http.NewServeMux()
 	handlers.Mount(mux, "/api/boostx", betStore, keyStore)

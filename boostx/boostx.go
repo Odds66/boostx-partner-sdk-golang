@@ -7,6 +7,7 @@ package boostx
 import (
 	"crypto/ecdsa"
 	"net/http"
+	"time"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/client"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/handlers"
@@ -23,7 +24,7 @@ type (
 	StaticPrivateKeyStore = keys.StaticPrivateKeyStore
 )
 
-// Token types for GID, GamePass, Booster, CheckBet, Settlement, and Money.
+// Token types for GID, GamePass, Booster, CheckBet, Settlement, VerifyKeys, and Money.
 type (
 	GID              = tokens.GID
 	GamePass         = tokens.GamePass
@@ -32,9 +33,26 @@ type (
 	CheckBet         = tokens.CheckBet
 	Settlement       = tokens.Settlement
 	SettlementParams = tokens.SettlementParams
+	VerifyKeys       = tokens.VerifyKeys
 	Money            = tokens.Money
 	RegisteredClaims = tokens.RegisteredClaims
 )
+
+// VerifyKeys protocol constants.
+const (
+	BoostxIdentity = tokens.BoostxIdentity
+
+	VerifyKeysReasonShape       = tokens.VerifyKeysReasonShape
+	VerifyKeysReasonIssAud      = tokens.VerifyKeysReasonIssAud
+	VerifyKeysReasonStale       = tokens.VerifyKeysReasonStale
+	VerifyKeysReasonNonceFormat = tokens.VerifyKeysReasonNonceFormat
+	VerifyKeysReasonSignature   = tokens.VerifyKeysReasonSignature
+)
+
+// VerifyKeysReason maps a ParseVerifyKeysToken error to its protocol reason string.
+func VerifyKeysReason(err error) string {
+	return tokens.VerifyKeysReason(err)
+}
 
 // Handlers and client types for the HTTP layer.
 type (
@@ -51,17 +69,32 @@ var (
 	ErrInvalidBooster    = tokens.ErrInvalidBooster
 	ErrInvalidCheckBet   = tokens.ErrInvalidCheckBet
 	ErrInvalidSettlement = tokens.ErrInvalidSettlement
+	ErrInvalidVerifyKeys = tokens.ErrInvalidVerifyKeys
+	ErrVerifyKeysShape   = tokens.ErrVerifyKeysShape
+	ErrVerifyKeysIssAud  = tokens.ErrVerifyKeysIssAud
+	ErrVerifyKeysStale   = tokens.ErrVerifyKeysStale
+	ErrVerifyKeysNonce   = tokens.ErrVerifyKeysNonce
 	ErrInvalidGID        = tokens.ErrInvalidGID
 	ErrInvalidSignature  = tokens.ErrInvalidSignature
 	ErrMissingClaim      = tokens.ErrMissingClaim
 	ErrInvalidClaim      = tokens.ErrInvalidClaim
 )
 
-// MountHandlers registers handlers on mux at prefix. The /set-boost endpoint is
-// always registered. The /check-bet endpoint is registered only if store implements
-// BetStoreChecker. Uses static keys for token verification. Returns error if either key is nil.
-func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, partnerPubKey, boostxPubKey *ecdsa.PublicKey) error {
-	keyStore, err := keys.NewStaticPublicKeyStore(partnerPubKey, boostxPubKey)
+// MountHandlers mounts the partner-side BoostX handlers on mux under prefix:
+// POST /set-boost and POST /verify-keys always; POST /check-bet when store
+// implements BetStoreChecker.
+//
+// Keys: partnerPubKey verifies GID signatures on inbound tokens; boostxPubKey
+// verifies Booster/CheckBet/VerifyKeys request JWTs; partnerPrivKey signs the
+// /verify-keys response. All three are required — returns an error if any is nil.
+func MountHandlers(
+	mux *http.ServeMux,
+	prefix string,
+	store BetStoreUpdater,
+	partnerPubKey, boostxPubKey *ecdsa.PublicKey,
+	partnerPrivKey *ecdsa.PrivateKey,
+) error {
+	keyStore, err := keys.NewStaticKeyStore(partnerPubKey, boostxPubKey, partnerPrivKey)
 	if err != nil {
 		return err
 	}
@@ -72,6 +105,21 @@ func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, par
 // MountHandlersWithKeyStorage mounts handlers with a custom HandlersKeyStore for multi-tenant scenarios.
 func MountHandlersWithKeyStorage(mux *http.ServeMux, prefix string, betStore BetStoreUpdater, keyStore HandlersKeyStore) {
 	handlers.Mount(mux, prefix, betStore, keyStore)
+}
+
+// CreateVerifyKeysToken creates a signed verify-keys JWT with the given iss/aud/nonce.
+func CreateVerifyKeysToken(privateKey *ecdsa.PrivateKey, issuer, audience string, nonce int32) (string, error) {
+	return tokens.CreateVerifyKeysToken(privateKey, issuer, audience, nonce)
+}
+
+// ParseVerifyKeysToken parses and verifies a verify-keys JWT.
+func ParseVerifyKeysToken(
+	token string,
+	publicKey *ecdsa.PublicKey,
+	expectedIssuer, expectedAudience string,
+	maxSkew time.Duration,
+) (*VerifyKeys, error) {
+	return tokens.ParseVerifyKeysToken(token, publicKey, expectedIssuer, expectedAudience, maxSkew)
 }
 
 // NewStaticPrivateKeyStore creates a StaticPrivateKeyStore with the given key.

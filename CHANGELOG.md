@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.3
+
+### Breaking Changes
+- `MountHandlers` now takes `partnerPrivKey *ecdsa.PrivateKey` as its final argument. `/verify-keys` is always registered alongside `/set-boost` and `/check-bet`.
+- `HandlersKeyStore` (aka `handlers.KeyStore`) gains a `PartnerPrivateKey` method. Multi-tenant implementations must add it; `StaticKeyStore` already satisfies it.
+
+### New Features
+- Add `POST /verify-keys` inbound handler — signed round-trip that confirms BoostX and the partner hold each other's public keys
+- Add `VerifyKeys` token type with `CreateVerifyKeysToken`, `ParseVerifyKeysToken`, and `ExtractVerifyKeysAudience`
+- Add protocol constant `BoostxIdentity = "boostx"` (used as `iss` on requests and `aud` on responses)
+- Add sentinel errors `ErrInvalidVerifyKeys`, `ErrVerifyKeysShape`, `ErrVerifyKeysIssAud`, `ErrVerifyKeysStale`, `ErrVerifyKeysNonce` — reason-specific errors wrap the generic sentinel
+- Add wire-reason constants `VerifyKeysReason{Shape,IssAud,Stale,NonceFormat,Signature}` and `VerifyKeysReason(err) string` to map errors to the protocol reason strings (`shape` / `iss-aud` / `stale` / `nonce-format` / `signature`)
+
 ## v0.7.0
 
 ### Breaking Changes
