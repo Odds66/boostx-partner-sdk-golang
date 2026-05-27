@@ -17,6 +17,7 @@ type GamePass struct {
 	X          float64 // Initial coefficient (xrange.init)
 	XMin       float64 // Minimum coefficient (xrange.min)
 	XMax       float64 // Maximum coefficient (xrange.max)
+	XDecimals  int     // Decimal places for X flooring (xrange.decimals); 0 = not set
 	EventTitle string  // Optional event title
 	RegisteredClaims
 }
@@ -31,6 +32,7 @@ type GamePassParams struct {
 	X          float64
 	XMin       float64
 	XMax       float64
+	XDecimals  int // optional; 0 = omit (backend defaults to 2), valid range [2, 6]
 	EventTitle string // optional
 }
 
@@ -42,9 +44,10 @@ type stakeClaims struct {
 }
 
 type xRangeClaims struct {
-	Init float64 `json:"init"`
-	Min  float64 `json:"min"`
-	Max  float64 `json:"max"`
+	Init     float64 `json:"init"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+	Decimals int     `json:"decimals,omitempty"`
 }
 
 type eventClaims struct {
@@ -97,6 +100,9 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 	if params.XMax < 0 || math.IsNaN(params.XMax) || math.IsInf(params.XMax, 0) {
 		return "", fmt.Errorf("%w: xmax", ErrInvalidClaim)
 	}
+	if params.XDecimals != 0 && (params.XDecimals < 2 || params.XDecimals > 6) {
+		return "", fmt.Errorf("%w: xdecimals", ErrInvalidClaim)
+	}
 
 	// Build GID
 	gid, err := BuildGID(params.Partner, params.User, params.Bet, privateKey)
@@ -113,9 +119,10 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 				Currency: params.Currency,
 			},
 			XRange: xRangeClaims{
-				Init: params.X,
-				Min:  params.XMin,
-				Max:  params.XMax,
+				Init:     params.X,
+				Min:      params.XMin,
+				Max:      params.XMax,
+				Decimals: params.XDecimals,
 			},
 		},
 		RegisteredClaims: RegisteredClaims{
@@ -155,6 +162,7 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 		X:                gp.XRange.Init,
 		XMin:             gp.XRange.Min,
 		XMax:             gp.XRange.Max,
+		XDecimals:        gp.XRange.Decimals,
 		EventTitle:       eventTitle,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
@@ -200,6 +208,7 @@ func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePa
 		X:                gp.XRange.Init,
 		XMin:             gp.XRange.Min,
 		XMax:             gp.XRange.Max,
+		XDecimals:        gp.XRange.Decimals,
 		EventTitle:       eventTitle,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil

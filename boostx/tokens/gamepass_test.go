@@ -2,6 +2,7 @@ package tokens
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 )
@@ -59,6 +60,113 @@ func TestCreateGamePassToken(t *testing.T) {
 	}
 	if gamePass.Signature == "" {
 		t.Error("expected non-empty GID signature")
+	}
+}
+
+func TestCreateGamePassToken_XDecimals(t *testing.T) {
+	privateKey, publicKey := generateTestKey(t)
+
+	token, err := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:   "partner-123",
+		User:      "user-456",
+		Bet:       "bet-789",
+		Amount:    100.0,
+		Currency:  "USD",
+		X:         2.0,
+		XMin:      1.1,
+		XMax:      10.0,
+		XDecimals: 4,
+	})
+	if err != nil {
+		t.Fatalf("CreateGamePassToken failed: %v", err)
+	}
+
+	gamePass, err := ParseGamePassToken(token, publicKey)
+	if err != nil {
+		t.Fatalf("ParseGamePassToken failed: %v", err)
+	}
+	if gamePass.XDecimals != 4 {
+		t.Errorf("expected xdecimals=%d, got %d", 4, gamePass.XDecimals)
+	}
+
+	extracted, err := ExtractGamePassClaims(token)
+	if err != nil {
+		t.Fatalf("ExtractGamePassClaims failed: %v", err)
+	}
+	if extracted.XDecimals != 4 {
+		t.Errorf("extract: expected xdecimals=%d, got %d", 4, extracted.XDecimals)
+	}
+}
+
+func TestCreateGamePassToken_XDecimalsDefault(t *testing.T) {
+	privateKey, publicKey := generateTestKey(t)
+
+	token, err := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner-123",
+		User:     "user-456",
+		Bet:      "bet-789",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
+	if err != nil {
+		t.Fatalf("CreateGamePassToken failed: %v", err)
+	}
+
+	gamePass, err := ParseGamePassToken(token, publicKey)
+	if err != nil {
+		t.Fatalf("ParseGamePassToken failed: %v", err)
+	}
+	if gamePass.XDecimals != 0 {
+		t.Errorf("expected xdecimals=0 (not set), got %d", gamePass.XDecimals)
+	}
+}
+
+func TestCreateGamePassToken_XDecimalsValidation(t *testing.T) {
+	privateKey, _ := generateTestKey(t)
+
+	for _, decimals := range []int{1, 7, -1, 100} {
+		t.Run(fmt.Sprintf("decimals=%d", decimals), func(t *testing.T) {
+			_, err := CreateGamePassToken(privateKey, GamePassParams{
+				Partner:   "partner",
+				User:      "user",
+				Bet:       "bet",
+				Amount:    100.0,
+				Currency:  "USD",
+				X:         2.0,
+				XMin:      1.1,
+				XMax:      10.0,
+				XDecimals: decimals,
+			})
+			if !errors.Is(err, ErrInvalidClaim) {
+				t.Errorf("expected ErrInvalidClaim for decimals=%d, got %v", decimals, err)
+			}
+		})
+	}
+}
+
+func TestCreateGamePassToken_XDecimalsValidRange(t *testing.T) {
+	privateKey, _ := generateTestKey(t)
+
+	for _, decimals := range []int{2, 3, 4, 5, 6} {
+		t.Run(fmt.Sprintf("decimals=%d", decimals), func(t *testing.T) {
+			_, err := CreateGamePassToken(privateKey, GamePassParams{
+				Partner:   "partner",
+				User:      "user",
+				Bet:       "bet",
+				Amount:    100.0,
+				Currency:  "USD",
+				X:         2.0,
+				XMin:      1.1,
+				XMax:      10.0,
+				XDecimals: decimals,
+			})
+			if err != nil {
+				t.Errorf("unexpected error for decimals=%d: %v", decimals, err)
+			}
+		})
 	}
 }
 

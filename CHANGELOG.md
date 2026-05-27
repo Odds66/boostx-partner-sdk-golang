@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.4
+
+### New Features
+- Add `XDecimals` field to `GamePass` and `GamePassParams` — carries the `xrange.decimals` value from the backend, controlling how many decimal places X is floored to (integer in [2, 6], default 2)
+- Optional on the wire: omit (or set to 0) to let the backend default to 2
+
 ## v0.8.3
 
 ### Breaking Changes

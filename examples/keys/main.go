@@ -28,6 +28,7 @@ func main() {
 		X:          2.0,
 		XMin:       1.1,
 		XMax:       10.0,
+		XDecimals:  4,
 		EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
 	})
 	if err != nil {
@@ -46,7 +47,7 @@ func main() {
 	fmt.Printf("  User: %s\n", parsedGamePass.User)
 	fmt.Printf("  Bet: %s\n", parsedGamePass.Bet)
 	fmt.Printf("  Amount: %.2f %s\n", parsedGamePass.Amount, parsedGamePass.Currency)
-	fmt.Printf("  X: %.2f (min: %.2f, max: %.2f)\n\n", parsedGamePass.X, parsedGamePass.XMin, parsedGamePass.XMax)
+	fmt.Printf("  X: %.2f (min: %.2f, max: %.2f, decimals: %d)\n\n", parsedGamePass.X, parsedGamePass.XMin, parsedGamePass.XMax, parsedGamePass.XDecimals)
 
 	// === BOOSTX SIDE: Create Booster response (simulated) ===
 	fmt.Println("=== Creating Booster Response (BoostX -> Partner) ===")

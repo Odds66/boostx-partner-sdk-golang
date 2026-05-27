@@ -55,6 +55,7 @@ func main() {
 			X:          2.0,
 			XMin:       1.1,
 			XMax:       10.0,
+			XDecimals:  2,
 			EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
 		})
 		if err != nil {
