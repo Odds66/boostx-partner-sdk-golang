@@ -117,7 +117,7 @@ func TestCheckBetToken_WireFormat(t *testing.T) {
 	}
 }
 
-func TestExtractCheckBetClaims(t *testing.T) {
+func TestExtractCheckBetPartner(t *testing.T) {
 	partnerPrivKey, _ := generateTestKey(t)
 	boostxPrivKey, _ := generateTestKey(t)
 
@@ -127,18 +127,11 @@ func TestExtractCheckBetClaims(t *testing.T) {
 	}
 	token, _ := SignJWT(claims, boostxPrivKey)
 
-	partner, user, bet, err := ExtractCheckBetClaims(token)
+	partner, err := ExtractCheckBetPartner(token)
 	if err != nil {
-		t.Fatalf("ExtractCheckBetClaims failed: %v", err)
+		t.Fatalf("ExtractCheckBetPartner failed: %v", err)
 	}
-
 	if partner != "partner-123" {
 		t.Errorf("expected partner=%q, got %q", "partner-123", partner)
-	}
-	if user != "user-456" {
-		t.Errorf("expected user=%q, got %q", "user-456", user)
-	}
-	if bet != "bet-789" {
-		t.Errorf("expected bet=%q, got %q", "bet-789", bet)
 	}
 }

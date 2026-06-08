@@ -23,15 +23,15 @@ type exampleKeyStore struct {
 	priv *ecdsa.PrivateKey
 }
 
-func (ks *exampleKeyStore) PartnerPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
+func (ks *exampleKeyStore) PartnerPublicKey(_ context.Context, _ string) (*ecdsa.PublicKey, error) {
 	return ks.pub, nil
 }
 
-func (ks *exampleKeyStore) PartnerPrivateKey(_ context.Context, _, _, _ string) (*ecdsa.PrivateKey, error) {
+func (ks *exampleKeyStore) PartnerPrivateKey(_ context.Context, _ string) (*ecdsa.PrivateKey, error) {
 	return ks.priv, nil
 }
 
-func (ks *exampleKeyStore) BoostxPublicKey(_ context.Context, _, _, _ string) (*ecdsa.PublicKey, error) {
+func (ks *exampleKeyStore) BoostxPublicKey(_ context.Context, _ string) (*ecdsa.PublicKey, error) {
 	return ks.pub, nil
 }
 

@@ -36,34 +36,32 @@ func (h *VerifyKeysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	partner, err := tokens.ExtractVerifyKeysAudience(req.VerifyKeysJWT)
+	partner, err := tokens.ExtractVerifyKeysRequestPartner(req.VerifyKeysJWT)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid verifyKeysJWT: "+tokens.VerifyKeysReasonShape)
 		return
 	}
 
-	// verify-keys has no GID, so there is no user/bet context — multi-tenant
-	// implementations should key only on partner.
 	ctx := r.Context()
-	boostxPubKey, err := h.keys.BoostxPublicKey(ctx, partner, "", "")
+	boostxPubKey, err := h.keys.BoostxPublicKey(ctx, partner)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get boostx key")
+		writeKeyError(w, err, "boostx key")
 		return
 	}
 
-	verified, err := tokens.ParseVerifyKeysToken(req.VerifyKeysJWT, boostxPubKey, tokens.BoostxIdentity, partner, 0)
+	verified, err := tokens.ParseVerifyKeysRequestToken(req.VerifyKeysJWT, boostxPubKey, partner, 0)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid verifyKeysJWT: "+tokens.VerifyKeysReason(err))
 		return
 	}
 
-	partnerPrivKey, err := h.keys.PartnerPrivateKey(ctx, partner, "", "")
+	partnerPrivKey, err := h.keys.PartnerPrivateKey(ctx, partner)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get partner private key")
+		writeKeyError(w, err, "partner private key")
 		return
 	}
 
-	responseJWT, err := tokens.CreateVerifyKeysToken(partnerPrivKey, partner, tokens.BoostxIdentity, verified.Nonce)
+	responseJWT, err := tokens.CreateVerifyKeysResponseToken(partnerPrivKey, partner, verified.Nonce)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to sign response")
 		return

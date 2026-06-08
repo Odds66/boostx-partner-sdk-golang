@@ -1,10 +1,10 @@
 // Example HTTP server showing boostx SDK integration.
 //
-// This example demonstrates:
-// - Loading keys from files (or generating test keys)
-// - Implementing BetStoreUpdater interface
-// - Mounting handlers on a mux
-// - Running the server
+// This example demonstrates a partner server serving several partner_ids:
+// - A MemoryKeyStore holding each partner_id's keys
+// - Implementing the BetStoreUpdater interface
+// - Mounting handlers with MountHandlers (keys selected by partner_id)
+// - Creating outbound GamePass tokens (key resolved from the store by partner_id)
 //
 // Usage:
 //
@@ -29,27 +29,41 @@ import (
 )
 
 const (
-	partnerID = "partner-123"
-	userID    = "user-456"
-	betID     = "bet-789"
+	partnerA = "partner-a"
+	partnerB = "partner-b"
+	userID   = "user-456"
 )
 
 func main() {
-	// Generate test keys (in production, load from secure storage)
-	partnerPrivateKey, partnerPublicKey := generateTestKeyPair("Partner")
-	_, boostxPublicKey := generateTestKeyPair("BoostX")
+	// Build a multi-tenant key store: one key set per partner_id. BoostX mints a
+	// distinct BoostX key pair per partner_id at registration; we generate one
+	// per partner here. In production, register from secure storage (or implement
+	// HandlersKeyStore for a DB/secret manager).
+	keyStore := boostx.NewMemoryKeyStore()
+	for _, id := range []string{partnerA, partnerB} {
+		partnerPriv, partnerPub := generateTestKeyPair("Partner " + id)
+		_, boostxPub := generateTestKeyPair("BoostX " + id)
+		if err := keyStore.Register(id, partnerPub, partnerPriv, boostxPub); err != nil {
+			log.Fatalf("register %s: %v", id, err)
+		}
+	}
 
-	// Create an in-memory bet store and add a sample bet for testing
+	// In-memory bet store with a sample bet per partner flow.
 	betStore := NewMemoryBetStore()
-	betStore.AddBet(betID)
+	betStore.AddBet("bet-a")
+	betStore.AddBet("bet-b")
 
-	// Mount handlers on mux and add a test endpoint to create GamePass tokens
 	mux := http.NewServeMux()
+	// GET /api/test/gamepass?partner=partner-a — sign a GamePass for that partner.
 	mux.HandleFunc("/api/test/gamepass", func(w http.ResponseWriter, r *http.Request) {
-		token, err := boostx.CreateGamePassToken(partnerPrivateKey, boostx.GamePassParams{
-			Partner:    partnerID,
+		pid := r.URL.Query().Get("partner")
+		if pid == "" {
+			pid = partnerA
+		}
+		params := boostx.GamePassParams{
+			Partner:    pid,
 			User:       userID,
-			Bet:        betID,
+			Bet:        "bet-a",
 			Amount:     100.0,
 			Currency:   "USD",
 			X:          2.0,
@@ -57,27 +71,32 @@ func main() {
 			XMax:       10.0,
 			XDecimals:  2,
 			EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
-		})
+		}
+		// Resolve this partner's signing key from the same store the handlers use.
+		key, err := keyStore.PartnerPrivateKey(r.Context(), params.Partner)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		token, err := boostx.CreateGamePassToken(key, params)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(token))
 	})
 
-	if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPublicKey, boostxPublicKey, partnerPrivateKey); err != nil {
-		log.Fatalf("Failed to mount handlers: %v", err)
-	}
+	// Multi-tenant: the handlers select each partner_id's keys from keyStore.
+	boostx.MountHandlers(mux, "/api/boostx", betStore, keyStore)
 
-	// Start server
 	addr := ":8080"
-	fmt.Printf("Starting server on %s\n", addr)
+	fmt.Printf("Starting multi-tenant server on %s (partners: %s, %s)\n", addr, partnerA, partnerB)
 	fmt.Println("Endpoints:")
 	fmt.Println("  POST /api/boostx/check-bet   - Check if bet is active (optional)")
 	fmt.Println("  POST /api/boostx/set-boost   - Receive boost update")
 	fmt.Println("  POST /api/boostx/verify-keys - Signed round-trip key verification")
-	fmt.Println("  GET  /api/test/gamepass      - Generate test GamePass token")
+	fmt.Println("  GET  /api/test/gamepass?partner=partner-a - Generate a GamePass for a partner")
 	fmt.Println()
 
 	log.Fatal(http.ListenAndServe(addr, mux))

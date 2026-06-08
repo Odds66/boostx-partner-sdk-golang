@@ -17,9 +17,9 @@ type Money struct {
 // RegisteredClaims is included for when a ParseSettlementToken is added
 // (the BoostX backend already parses these tokens).
 type Settlement struct {
-	GID              // Embedded GID fields (Partner, User, Bet, Signature)
-	Result  string   // Bet outcome: "won", "lost", "cancelled", "refunded"
-	Payout  Money    // Payout amount and currency
+	GID           // Embedded GID fields (Partner, User, Bet, Signature)
+	Result string // Bet outcome: "won", "lost", "cancelled", "refunded"
+	Payout Money  // Payout amount and currency
 	RegisteredClaims
 }
 
@@ -35,7 +35,7 @@ type SettlementParams struct {
 
 // settlementPayload contains the fields nested under the "settlement" root.
 type settlementPayload struct {
-	GID    GID   `json:"gid"`
+	GID    GID    `json:"gid"`
 	Result string `json:"result"`
 	Payout Money  `json:"payout"`
 }

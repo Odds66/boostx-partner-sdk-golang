@@ -13,13 +13,13 @@ import (
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
 )
 
-func exampleKeyStore() *keys.StaticPrivateKeyStore {
+func exampleKeyStore() *keys.MemoryKeyStore {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		log.Fatal(err)
 	}
-	ks, err := keys.NewStaticPrivateKeyStore(key)
-	if err != nil {
+	ks := keys.NewMemoryKeyStore()
+	if err := ks.Register("partner-1", nil, key, nil); err != nil {
 		log.Fatal(err)
 	}
 	return ks

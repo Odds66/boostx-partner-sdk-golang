@@ -7,10 +7,12 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
@@ -34,15 +36,15 @@ type mockKeyStore struct {
 	privErr        error
 }
 
-func (m *mockKeyStore) PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+func (m *mockKeyStore) PartnerPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error) {
 	return m.partnerPubKey, m.pubErr
 }
 
-func (m *mockKeyStore) PartnerPrivateKey(ctx context.Context, partner, user, bet string) (*ecdsa.PrivateKey, error) {
+func (m *mockKeyStore) PartnerPrivateKey(ctx context.Context, partner string) (*ecdsa.PrivateKey, error) {
 	return m.partnerPrivKey, m.privErr
 }
 
-func (m *mockKeyStore) BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error) {
+func (m *mockKeyStore) BoostxPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error) {
 	return m.boostxPubKey, m.pubErr
 }
 
@@ -287,5 +289,36 @@ func TestMount_WithoutCheckBet(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("endpoint /api/boostx/check-bet should not be registered, got %d", rec.Code)
+	}
+}
+
+// TestSetBoostHandler_UnknownPartner verifies a key store reporting an unknown
+// partner_id yields 400 (a request problem), not 500 (a backend failure).
+func TestSetBoostHandler_UnknownPartner(t *testing.T) {
+	partnerPrivKey, _ := generateTestKeyPair(t)
+	boostxPrivKey, _ := generateTestKeyPair(t)
+
+	keyStore := &mockKeyStore{pubErr: fmt.Errorf("%w %q", keys.ErrUnknownPartner, "partner-123")}
+	handler := NewSetBoostHandler(&mockBetStore{}, keyStore)
+
+	gid, _ := tokens.BuildGID("partner-123", "user-456", "bet-789", partnerPrivKey)
+	claims := struct {
+		Booster struct {
+			GID tokens.GID `json:"gid"`
+		} `json:"booster"`
+		tokens.RegisteredClaims
+	}{}
+	claims.Booster.GID = *gid
+	boosterToken, _ := tokens.SignJWT(claims, boostxPrivKey)
+	body, _ := json.Marshal(setBoostRequest{BoosterJWT: boosterToken})
+
+	req := httptest.NewRequest(http.MethodPost, "/set-boost", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var resp errorResponse
+	_ = json.NewDecoder(rec.Body).Decode(&resp)
+	if rec.Code != http.StatusBadRequest || resp.Error != "unknown partner" {
+		t.Errorf("unknown partner: expected 400 %q, got %d %q", "unknown partner", rec.Code, resp.Error)
 	}
 }

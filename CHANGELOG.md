@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.9.0
+
+### Breaking Changes
+- Replace the direction-agnostic `CreateVerifyKeysToken` / `ParseVerifyKeysToken` with four direction-explicit functions that bake in `BoostxIdentity` and take only the partner ID (wire format unchanged — SDK ergonomics only):
+  - `CreateVerifyKeysRequestToken(boostxPriv, partnerID, nonce)` — BoostX → partner request (iss="boostx", aud=partnerID)
+  - `ParseVerifyKeysRequestToken(token, boostxPub, partnerID, maxSkew)` — verifies a BoostX → partner request
+  - `CreateVerifyKeysResponseToken(partnerPriv, partnerID, nonce)` — partner → BoostX response (iss=partnerID, aud="boostx")
+  - `ParseVerifyKeysResponseToken(token, partnerPub, partnerID, maxSkew)` — verifies a partner → BoostX response
+- Replace the single `VerifyKeys` result struct with direction-specific `VerifyKeysRequest` / `VerifyKeysResponse`, each exposing `PartnerID` (from `aud` on requests, `iss` on responses) and `Nonce` — the redundant `Issuer`/`Audience` fields are dropped since the parse functions already validate them
+- Rename `ExtractVerifyKeysAudience` to `ExtractVerifyKeysRequestPartner` — request-side partner-ID extraction for key lookup; now also re-exported from the root `boostx` package
+- Remove facade re-exports that no SDK function produces or consumes: the `GamePass`, `Settlement`, `Money`, and `RegisteredClaims` type aliases — outbound flows use `GamePassParams`/`SettlementParams` with `Create*Token`, never the types. Reference `boostx/tokens` directly if you used these
+- Make the SDK multi-tenant throughout (keyed by `partner_id`) and remove the single-tenant key-store types and methods:
+  - Added `MemoryKeyStore`, an in-memory store keyed by `partner_id`: `NewMemoryKeyStore()` (no args), then add partners with `Register(partnerID, partnerPub, partnerPriv, boostxPub)`. Any key may be nil for a partner that only fills some roles (e.g. `Register(id, nil, priv, nil)` for outbound signing)
+  - Removed the single-tenant `StaticKeyStore`, `StaticPublicKeyStore`, and `StaticPrivateKeyStore` (with their constructors and `LoadFromFiles`/`LoadFromPEM`) — a `MemoryKeyStore` with only the public keys, or only the private key, covers the verify-only and sign-only roles they served
+  - `MountHandlers(mux, prefix, store, keyStore)` now takes a key store instead of three raw keys; the old raw-keys form and `MountHandlersWithKeyStorage` are removed (a single mount function remains). Single-tenant partners register their one `partner_id`
+  - The SDK ships only the in-memory `MemoryKeyStore`; for keys that live elsewhere (database, secret manager, KMS), implement `HandlersKeyStore`/`ClientKeyStore` directly (three methods keyed on `partner_id`)
+  - The `HandlersKeyStore`/`ClientKeyStore` methods now take `(ctx, partner)` instead of `(ctx, partner, user, bet)` — keys are per-partner_id, so `user`/`bet` were never used; custom implementations update their signatures
+  - The mounted handlers respond `400` (not `500`) when the key store reports an unknown partner_id; `MemoryKeyStore` lookups wrap the new exported `keys.ErrUnknownPartner`, which custom stores can return to opt into the same mapping
+- Rename `ExtractBoosterClaims`/`ExtractCheckBetClaims` to `ExtractBoosterPartner`/`ExtractCheckBetPartner`, now returning just the `partner_id` (`(string, error)`) instead of `(partner, user, bet, error)` — the handlers need only the partner for key lookup, matching `ExtractVerifyKeysRequestPartner`
+
+### New Features
+- Re-export the individual partner-side handler constructors from the root `boostx` package — `NewSetBoostHandler`, `NewVerifyKeysHandler`, `NewCheckBetHandler`, each returning an `http.Handler` — so the endpoints can be mounted on a non-stdlib router (gin, echo, chi, …) without `MountHandlers` (which requires `*http.ServeMux`)
+- Re-export the inbound token parsers `ParseBoosterToken` / `ExtractBoosterPartner` and `ParseCheckBetToken` / `ExtractCheckBetPartner` from the root `boostx` package, so the `/set-boost` and `/check-bet` handlers can be hand-written entirely against the facade (no `boostx/tokens` import). Each `Parse*` verifies both the BoostX JWT signature and the embedded partner GID signature
+- Add `VerifyKeysReason(err)` — maps a verify-keys parse failure to its wire reason string (`shape` / `iss-aud` / `stale` / `nonce-format` / `signature`), pairing with the reason-specific `ErrVerifyKeys*` sentinels the parse functions return
+
+### Hardening
+- Reject `partnerID == "boostx"` (the `BoostxIdentity` value) across the verify-keys API — the create/parse functions return `ErrInvalidClaim`, and `ExtractVerifyKeysRequestPartner`/the inbound `/verify-keys` handler reject a request whose `aud` is `"boostx"` as `shape`. A partner named `boostx` would make request claims (`{iss:"boostx", aud:"boostx"}`) and response claims identical, leaving only the signing key to distinguish direction.
+
 ## v0.8.4
 
 ### New Features

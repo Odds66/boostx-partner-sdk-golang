@@ -32,7 +32,7 @@ type GamePassParams struct {
 	X          float64
 	XMin       float64
 	XMax       float64
-	XDecimals  int // optional; 0 = omit (backend defaults to 2), valid range [2, 6]
+	XDecimals  int    // optional; 0 = omit (backend defaults to 2), valid range [2, 6]
 	EventTitle string // optional
 }
 

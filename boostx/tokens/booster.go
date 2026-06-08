@@ -39,20 +39,18 @@ type boosterClaims struct {
 	RegisteredClaims
 }
 
-// ExtractBoosterClaims extracts partner/user/bet from a Booster token without verification.
+// ExtractBoosterPartner extracts the partner_id from a Booster token without verification.
 // WARNING: Use only for key lookup. Always verify with ParseBoosterToken afterwards.
-func ExtractBoosterClaims(boosterToken string) (partner, user, bet string, err error) {
+func ExtractBoosterPartner(boosterToken string) (string, error) {
 	var claims boosterClaims
 	if err := ExtractJWTClaims(boosterToken, &claims); err != nil {
-		return "", "", "", fmt.Errorf("%w: %v", ErrInvalidBooster, err)
+		return "", fmt.Errorf("%w: %v", ErrInvalidBooster, err)
 	}
-
-	gid := &claims.Booster.GID
-	if gid.Partner == "" {
-		return "", "", "", fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+	partner := claims.Booster.GID.Partner
+	if partner == "" {
+		return "", fmt.Errorf("%w: gid.partner", ErrMissingClaim)
 	}
-
-	return gid.Partner, gid.User, gid.Bet, nil
+	return partner, nil
 }
 
 // ParseBoosterToken parses a Booster token and verifies both the JWT signature

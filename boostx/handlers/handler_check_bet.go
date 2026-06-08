@@ -39,21 +39,21 @@ func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract claims without verification to get key lookup params
-	partner, user, bet, err := tokens.ExtractCheckBetClaims(req.CheckBetJWT)
+	partner, err := tokens.ExtractCheckBetPartner(req.CheckBetJWT)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid checkbet token")
 		return
 	}
 
-	boostxPubKey, err := h.keys.BoostxPublicKey(r.Context(), partner, user, bet)
+	boostxPubKey, err := h.keys.BoostxPublicKey(r.Context(), partner)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get boostx key")
+		writeKeyError(w, err, "boostx key")
 		return
 	}
 
-	partnerPubKey, err := h.keys.PartnerPublicKey(r.Context(), partner, user, bet)
+	partnerPubKey, err := h.keys.PartnerPublicKey(r.Context(), partner)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get partner key")
+		writeKeyError(w, err, "partner key")
 		return
 	}
 

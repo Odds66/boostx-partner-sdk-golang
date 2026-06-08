@@ -136,7 +136,7 @@ func TestParseBoosterToken_InvalidSignature(t *testing.T) {
 	}
 }
 
-func TestExtractBoosterClaims(t *testing.T) {
+func TestExtractBoosterPartner(t *testing.T) {
 	partnerPrivKey, _ := generateTestKey(t)
 	boostxPrivKey, _ := generateTestKey(t)
 
@@ -152,19 +152,12 @@ func TestExtractBoosterClaims(t *testing.T) {
 
 	boosterToken, _ := SignJWT(bc, boostxPrivKey)
 
-	partner, user, bet, err := ExtractBoosterClaims(boosterToken)
+	partner, err := ExtractBoosterPartner(boosterToken)
 	if err != nil {
-		t.Fatalf("ExtractBoosterClaims failed: %v", err)
+		t.Fatalf("ExtractBoosterPartner failed: %v", err)
 	}
-
 	if partner != "partner-123" {
 		t.Errorf("expected partner=%q, got %q", "partner-123", partner)
-	}
-	if user != "user-456" {
-		t.Errorf("expected user=%q, got %q", "user-456", user)
-	}
-	if bet != "bet-789" {
-		t.Errorf("expected bet=%q, got %q", "bet-789", bet)
 	}
 }
 
@@ -208,7 +201,7 @@ func TestBoosterToken_WireFormat(t *testing.T) {
 	}
 }
 
-func TestExtractBoosterClaims_MissingGID(t *testing.T) {
+func TestExtractBoosterPartner_MissingGID(t *testing.T) {
 	boostxPrivKey, _ := generateTestKey(t)
 
 	bc := boosterClaims{
@@ -221,7 +214,7 @@ func TestExtractBoosterClaims_MissingGID(t *testing.T) {
 
 	boosterToken, _ := SignJWT(bc, boostxPrivKey)
 
-	_, _, _, err := ExtractBoosterClaims(boosterToken)
+	_, err := ExtractBoosterPartner(boosterToken)
 	if !errors.Is(err, ErrMissingClaim) {
 		t.Errorf("expected ErrMissingClaim, got %v", err)
 	}

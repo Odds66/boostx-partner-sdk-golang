@@ -16,16 +16,26 @@ const (
 	// wire type enforces it; exposed only for the create-side error message.
 	nonceMax = 0x7FFFFFFF
 
-	// defaultVerifyKeysSkew is the iat skew window applied when
-	// ParseVerifyKeysToken is called with maxSkew == 0.
+	// defaultVerifyKeysSkew is the iat skew window applied when a verify-keys
+	// token is parsed with maxSkew == 0.
 	defaultVerifyKeysSkew = 30 * time.Second
 )
 
-// VerifyKeys contains the parsed claims from a verify-keys JWT.
-type VerifyKeys struct {
-	Issuer   string
-	Audience string
-	Nonce    int32
+// VerifyKeysRequest contains the parsed claims of a BoostX → partner
+// verify-keys request. PartnerID is the partner the request is addressed to
+// (the "aud" claim — "iss" is always "boostx").
+type VerifyKeysRequest struct {
+	PartnerID string
+	Nonce     int32
+	RegisteredClaims
+}
+
+// VerifyKeysResponse contains the parsed claims of a partner → BoostX
+// verify-keys response. PartnerID is the partner that signed the response
+// (the "iss" claim — "aud" is always "boostx").
+type VerifyKeysResponse struct {
+	PartnerID string
+	Nonce     int32
 	RegisteredClaims
 }
 
@@ -42,9 +52,43 @@ type verifyKeysClaims struct {
 	RegisteredClaims
 }
 
-// CreateVerifyKeysToken creates and signs a verify-keys JWT with the given iss/aud/nonce.
+// validatePartnerID rejects partner identifiers that cannot legally appear in a
+// verify-keys token: empty, or equal to BoostxIdentity. A partner named
+// "boostx" would make a request's claims ({iss:"boostx", aud:"boostx"}) and a
+// response's claims identical, collapsing the two directions into one — so the
+// signing key would become the only thing telling them apart.
+func validatePartnerID(partnerID string) error {
+	switch partnerID {
+	case "":
+		return fmt.Errorf("%w: partnerID", ErrMissingClaim)
+	case BoostxIdentity:
+		return fmt.Errorf("%w: partnerID must not be %q", ErrInvalidClaim, BoostxIdentity)
+	}
+	return nil
+}
+
+// CreateVerifyKeysRequestToken signs the BoostX → partner verify-keys request:
+// iss="boostx", aud=partnerID. partnerID must be non-empty and not "boostx";
 // nonce must be strictly positive.
-func CreateVerifyKeysToken(privateKey *ecdsa.PrivateKey, issuer, audience string, nonce int32) (string, error) {
+func CreateVerifyKeysRequestToken(boostxPriv *ecdsa.PrivateKey, partnerID string, nonce int32) (string, error) {
+	if err := validatePartnerID(partnerID); err != nil {
+		return "", err
+	}
+	return createVerifyKeysToken(boostxPriv, BoostxIdentity, partnerID, nonce)
+}
+
+// CreateVerifyKeysResponseToken signs the partner → BoostX verify-keys response:
+// iss=partnerID, aud="boostx". partnerID must be non-empty and not "boostx";
+// nonce echoes the request nonce and must be strictly positive.
+func CreateVerifyKeysResponseToken(partnerPriv *ecdsa.PrivateKey, partnerID string, nonce int32) (string, error) {
+	if err := validatePartnerID(partnerID); err != nil {
+		return "", err
+	}
+	return createVerifyKeysToken(partnerPriv, partnerID, BoostxIdentity, nonce)
+}
+
+// createVerifyKeysToken creates and signs a verify-keys JWT with the given iss/aud/nonce.
+func createVerifyKeysToken(privateKey *ecdsa.PrivateKey, issuer, audience string, nonce int32) (string, error) {
 	if privateKey == nil {
 		return "", ErrInvalidPrivateKey
 	}
@@ -69,30 +113,83 @@ func CreateVerifyKeysToken(privateKey *ecdsa.PrivateKey, issuer, audience string
 	return SignJWT(claims, privateKey)
 }
 
-// ExtractVerifyKeysAudience returns the "aud" claim from an unverified verify-keys token.
-// WARNING: Use only for key lookup. Always verify with ParseVerifyKeysToken afterwards.
-func ExtractVerifyKeysAudience(token string) (string, error) {
+// ExtractVerifyKeysRequestPartner returns the partner ID (the "aud" claim) from
+// an unverified BoostX → partner verify-keys request, for key lookup.
+// WARNING: Use only for key lookup. Always verify with ParseVerifyKeysRequestToken afterwards.
+func ExtractVerifyKeysRequestPartner(token string) (string, error) {
 	var claims verifyKeysClaims
 	if err := ExtractJWTClaims(token, &claims); err != nil {
 		return "", fmt.Errorf("%w (%v)", ErrVerifyKeysShape, err)
 	}
-	if claims.Audience == "" {
+	// Empty aud, or aud=="boostx" (no real partner is the BoostX identity),
+	// is a malformed request — reject before any key lookup.
+	if claims.Audience == "" || claims.Audience == BoostxIdentity {
 		return "", ErrVerifyKeysShape
 	}
 	return claims.Audience, nil
 }
 
-// ParseVerifyKeysToken parses and validates a verify-keys JWT:
+// ParseVerifyKeysRequestToken parses and validates a BoostX → partner
+// verify-keys request: expects iss="boostx", aud=partnerID. Verifies the ES256
+// signature, checks iat freshness within maxSkew (defaults to 30s when zero),
+// and requires a strictly positive nonce. partnerID must be non-empty and not
+// "boostx". Returns a sentinel error so callers can map to the protocol reason
+// strings via VerifyKeysReason.
+func ParseVerifyKeysRequestToken(
+	token string,
+	boostxPub *ecdsa.PublicKey,
+	partnerID string,
+	maxSkew time.Duration,
+) (*VerifyKeysRequest, error) {
+	if err := validatePartnerID(partnerID); err != nil {
+		return nil, err
+	}
+	claims, err := parseVerifyKeysToken(token, boostxPub, BoostxIdentity, partnerID, maxSkew)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifyKeysRequest{
+		PartnerID:        claims.Audience,
+		Nonce:            claims.VerifyKeys.Nonce,
+		RegisteredClaims: claims.RegisteredClaims,
+	}, nil
+}
+
+// ParseVerifyKeysResponseToken parses and validates a partner → BoostX
+// verify-keys response: expects iss=partnerID, aud="boostx". Same
+// signature/freshness/nonce checks as the request path. partnerID must be
+// non-empty and not "boostx".
+func ParseVerifyKeysResponseToken(
+	token string,
+	partnerPub *ecdsa.PublicKey,
+	partnerID string,
+	maxSkew time.Duration,
+) (*VerifyKeysResponse, error) {
+	if err := validatePartnerID(partnerID); err != nil {
+		return nil, err
+	}
+	claims, err := parseVerifyKeysToken(token, partnerPub, partnerID, BoostxIdentity, maxSkew)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifyKeysResponse{
+		PartnerID:        claims.Issuer,
+		Nonce:            claims.VerifyKeys.Nonce,
+		RegisteredClaims: claims.RegisteredClaims,
+	}, nil
+}
+
+// parseVerifyKeysToken parses and validates a verify-keys JWT:
 // verifies the ES256 signature, enforces iss/aud match, checks iat freshness
 // within maxSkew (defaults to 30s when zero), and requires a strictly positive
 // nonce. Returns a sentinel error so callers can map to the protocol reason
 // strings (shape / iss-aud / stale / nonce-format / signature).
-func ParseVerifyKeysToken(
+func parseVerifyKeysToken(
 	token string,
 	publicKey *ecdsa.PublicKey,
 	expectedIssuer, expectedAudience string,
 	maxSkew time.Duration,
-) (*VerifyKeys, error) {
+) (*verifyKeysClaims, error) {
 	if publicKey == nil {
 		return nil, ErrInvalidPublicKey
 	}
@@ -136,10 +233,5 @@ func ParseVerifyKeysToken(
 		return nil, ErrVerifyKeysNonce
 	}
 
-	return &VerifyKeys{
-		Issuer:           claims.Issuer,
-		Audience:         claims.Audience,
-		Nonce:            claims.VerifyKeys.Nonce,
-		RegisteredClaims: claims.RegisteredClaims,
-	}, nil
+	return &claims, nil
 }

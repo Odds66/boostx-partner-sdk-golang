@@ -16,7 +16,7 @@ type settlementRequest struct {
 // sends it to the BoostX API. The signing key is resolved via the Client's
 // KeyStore.
 func (c *Client) SubmitSettlement(ctx context.Context, params tokens.SettlementParams) error {
-	key, err := c.keys.PartnerPrivateKey(ctx, params.Partner, params.User, params.Bet)
+	key, err := c.keys.PartnerPrivateKey(ctx, params.Partner)
 	if err != nil {
 		return fmt.Errorf("resolve settlement key: %w", err)
 	}

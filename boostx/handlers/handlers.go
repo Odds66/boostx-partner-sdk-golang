@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
 )
 
 // maxRequestBodySize limits request body to 64KB.
@@ -35,6 +38,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: message})
+}
+
+// writeKeyError maps a key-store lookup failure to a response: an unknown
+// partner_id is a client error (400); anything else is a backend failure (500).
+func writeKeyError(w http.ResponseWriter, err error, what string) {
+	if errors.Is(err, keys.ErrUnknownPartner) {
+		writeError(w, http.StatusBadRequest, "unknown partner")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "failed to get "+what)
 }
 
 // Mount registers the partner-side BoostX handlers on mux under prefix:

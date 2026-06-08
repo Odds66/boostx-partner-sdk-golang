@@ -15,15 +15,15 @@ import (
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
-func testKeyStore(t *testing.T) *keys.StaticPrivateKeyStore {
+func testKeyStore(t *testing.T) *keys.MemoryKeyStore {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	ks, err := keys.NewStaticPrivateKeyStore(key)
-	if err != nil {
-		t.Fatalf("create key store: %v", err)
+	ks := keys.NewMemoryKeyStore()
+	if err := ks.Register("partner-1", nil, key, nil); err != nil {
+		t.Fatalf("register: %v", err)
 	}
 	return ks
 }
@@ -132,12 +132,5 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 				t.Errorf("message = %q, want %q", apiErr.Message, tt.wantMsg)
 			}
 		})
-	}
-}
-
-func TestStaticPrivateKeyStore_NilKey(t *testing.T) {
-	_, err := keys.NewStaticPrivateKeyStore(nil)
-	if err == nil {
-		t.Fatal("expected error for nil key, got nil")
 	}
 }

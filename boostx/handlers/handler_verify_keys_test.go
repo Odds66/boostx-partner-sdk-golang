@@ -72,7 +72,7 @@ func TestVerifyKeysHandler_Success(t *testing.T) {
 	handler := NewVerifyKeysHandler(keyStore)
 
 	const nonce = int32(42)
-	requestJWT, err := tokens.CreateVerifyKeysToken(boostxPriv, tokens.BoostxIdentity, testPartnerID, nonce)
+	requestJWT, err := tokens.CreateVerifyKeysRequestToken(boostxPriv, testPartnerID, nonce)
 	if err != nil {
 		t.Fatalf("create request JWT: %v", err)
 	}
@@ -94,15 +94,12 @@ func TestVerifyKeysHandler_Success(t *testing.T) {
 		t.Fatal("expected responseJWT, got empty")
 	}
 
-	vk, err := tokens.ParseVerifyKeysToken(resp.Result.ResponseJWT, &partnerPriv.PublicKey, testPartnerID, tokens.BoostxIdentity, 0)
+	vk, err := tokens.ParseVerifyKeysResponseToken(resp.Result.ResponseJWT, &partnerPriv.PublicKey, testPartnerID, 0)
 	if err != nil {
 		t.Fatalf("parse response JWT: %v", err)
 	}
-	if vk.Issuer != testPartnerID {
-		t.Errorf("response iss: expected %q, got %q", testPartnerID, vk.Issuer)
-	}
-	if vk.Audience != tokens.BoostxIdentity {
-		t.Errorf("response aud: expected %q, got %q", tokens.BoostxIdentity, vk.Audience)
+	if vk.PartnerID != testPartnerID {
+		t.Errorf("response partnerID: expected %q, got %q", testPartnerID, vk.PartnerID)
 	}
 	if vk.Nonce != nonce {
 		t.Errorf("expected echoed nonce=%d, got %d", nonce, vk.Nonce)
@@ -127,7 +124,7 @@ func TestVerifyKeysHandler_InvalidSignature(t *testing.T) {
 	handler := NewVerifyKeysHandler(keyStore)
 
 	wrongPriv, _ := generateTestKeyPair(t)
-	requestJWT, _ := tokens.CreateVerifyKeysToken(wrongPriv, tokens.BoostxIdentity, testPartnerID, 1)
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(wrongPriv, testPartnerID, 1)
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
@@ -142,7 +139,14 @@ func TestVerifyKeysHandler_IssAudMismatch(t *testing.T) {
 	keyStore, boostxPriv, _ := fullStore(t)
 	handler := NewVerifyKeysHandler(keyStore)
 
-	requestJWT, _ := tokens.CreateVerifyKeysToken(boostxPriv, "not-boostx", testPartnerID, 1)
+	// iss is baked into the request creator, so the wrong-iss request is
+	// hand-signed.
+	requestJWT := signRaw(t, boostxPriv, map[string]any{
+		"verifyKeys": map[string]any{"nonce": 1},
+		"iss":        "not-boostx",
+		"aud":        testPartnerID,
+		"iat":        time.Now().Unix(),
+	})
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
@@ -151,6 +155,29 @@ func TestVerifyKeysHandler_IssAudMismatch(t *testing.T) {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
 	assertReason(t, rec.Body.Bytes(), tokens.VerifyKeysReasonIssAud)
+}
+
+// TestVerifyKeysHandler_AudienceBoostxRejected asserts the handler rejects a
+// request addressed to aud="boostx" — no real partner is the BoostX identity,
+// so it is malformed and surfaces as "shape" before any key lookup.
+func TestVerifyKeysHandler_AudienceBoostxRejected(t *testing.T) {
+	keyStore, boostxPriv, _ := fullStore(t)
+	handler := NewVerifyKeysHandler(keyStore)
+
+	requestJWT := signRaw(t, boostxPriv, map[string]any{
+		"verifyKeys": map[string]any{"nonce": 1},
+		"iss":        tokens.BoostxIdentity,
+		"aud":        tokens.BoostxIdentity,
+		"iat":        time.Now().Unix(),
+	})
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	assertReason(t, rec.Body.Bytes(), tokens.VerifyKeysReasonShape)
 }
 
 func TestVerifyKeysHandler_Stale(t *testing.T) {
@@ -175,7 +202,7 @@ func TestVerifyKeysHandler_Stale(t *testing.T) {
 }
 
 // TestVerifyKeysHandler_NonceFormat asserts the handler surfaces the
-// "nonce-format" reason when ParseVerifyKeysToken returns ErrVerifyKeysNonce.
+// "nonce-format" reason when ParseVerifyKeysRequestToken returns ErrVerifyKeysNonce.
 // Exhaustive coverage of which inputs trigger that error lives in the token
 // package; this test only validates the wire mapping.
 func TestVerifyKeysHandler_NonceFormat(t *testing.T) {
@@ -200,7 +227,7 @@ func TestVerifyKeysHandler_NonceFormat(t *testing.T) {
 }
 
 // TestVerifyKeysHandler_Shape asserts the handler surfaces the "shape" reason
-// when a JSON-level decode failure propagates from ParseVerifyKeysToken.
+// when a JSON-level decode failure propagates from ParseVerifyKeysRequestToken.
 func TestVerifyKeysHandler_Shape(t *testing.T) {
 	keyStore, boostxPriv, _ := fullStore(t)
 	handler := NewVerifyKeysHandler(keyStore)
@@ -227,7 +254,7 @@ func TestVerifyKeysHandler_PrivateKeyLookupFailure(t *testing.T) {
 	keyStore.privErr = errors.New("vault unavailable")
 	handler := NewVerifyKeysHandler(keyStore)
 
-	requestJWT, _ := tokens.CreateVerifyKeysToken(boostxPriv, tokens.BoostxIdentity, testPartnerID, 1)
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(boostxPriv, testPartnerID, 1)
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
@@ -245,7 +272,7 @@ func TestVerifyKeysHandler_BoostxKeyLookupFailure(t *testing.T) {
 	keyStore.pubErr = errors.New("kms timeout")
 	handler := NewVerifyKeysHandler(keyStore)
 
-	requestJWT, _ := tokens.CreateVerifyKeysToken(boostxPriv, tokens.BoostxIdentity, testPartnerID, 1)
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(boostxPriv, testPartnerID, 1)
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
@@ -264,7 +291,7 @@ func TestMount_VerifyKeysRoundTrip(t *testing.T) {
 	Mount(mux, "/api/boostx", betStore, keyStore)
 
 	const nonce = int32(777)
-	requestJWT, _ := tokens.CreateVerifyKeysToken(boostxPriv, tokens.BoostxIdentity, testPartnerID, nonce)
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(boostxPriv, testPartnerID, nonce)
 	body, _ := json.Marshal(verifyKeysRequest{VerifyKeysJWT: requestJWT})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/boostx/verify-keys", bytes.NewReader(body))
@@ -282,7 +309,7 @@ func TestMount_VerifyKeysRoundTrip(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	vk, err := tokens.ParseVerifyKeysToken(resp.Result.ResponseJWT, &partnerPriv.PublicKey, testPartnerID, tokens.BoostxIdentity, 0)
+	vk, err := tokens.ParseVerifyKeysResponseToken(resp.Result.ResponseJWT, &partnerPriv.PublicKey, testPartnerID, 0)
 	if err != nil {
 		t.Fatalf("parse response JWT: %v", err)
 	}
@@ -290,4 +317,3 @@ func TestMount_VerifyKeysRoundTrip(t *testing.T) {
 		t.Errorf("expected echoed nonce=%d, got %d", nonce, vk.Nonce)
 	}
 }
-

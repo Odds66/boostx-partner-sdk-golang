@@ -43,7 +43,7 @@ const (
 	VerifyKeysReasonSignature   = "signature"
 )
 
-// VerifyKeysReason maps a ParseVerifyKeysToken error to its protocol reason
+// VerifyKeysReason maps a verify-keys parse error to its protocol reason
 // string. Unclassified errors fall through to "shape" — the safe default for
 // anything that failed JSON-level decoding.
 func VerifyKeysReason(err error) string {

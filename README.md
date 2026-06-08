@@ -33,10 +33,13 @@ func main() {
     partnerPrivKey, _ := boostx.LoadPrivateKeyFromFile("partner_private.pem")
     betStore := NewYourBetStore()
 
+    // Register your partner_id's keys — partnerPub, partnerPriv, boostxPub.
+    // (BoostX assigns the id and the boostx key pair.)
+    keyStore := boostx.NewMemoryKeyStore()
+    keyStore.Register("your-partner-id", partnerPubKey, partnerPrivKey, boostxPubKey)
+
     mux := http.NewServeMux()
-    if err := boostx.MountHandlers(mux, "/api/boostx", betStore, partnerPubKey, boostxPubKey, partnerPrivKey); err != nil {
-        log.Fatal(err)
-    }
+    boostx.MountHandlers(mux, "/api/boostx", betStore, keyStore)
 
     log.Fatal(http.ListenAndServe(":8080", mux))
 }
@@ -154,7 +157,8 @@ Use the client to sign and submit settlement tokens to BoostX:
 
 ```go
 partnerKey, _ := boostx.LoadPrivateKeyFromFile("partner_private.pem")
-keyStore, _ := boostx.NewStaticPrivateKeyStore(partnerKey)
+keyStore := boostx.NewMemoryKeyStore()
+keyStore.Register("partner-id", nil, partnerKey, nil) // outbound needs only the signing key
 client := boostx.NewClient(keyStore)
 
 err := client.SubmitSettlement(ctx, boostx.SettlementParams{
@@ -180,18 +184,48 @@ token, err := boostx.CreateSettlementToken(privateKey, boostx.SettlementParams{
 })
 ```
 
-### Custom Key Storage
+### Key Stores
 
-For multi-tenant scenarios, implement `HandlersKeyStore`:
+The key store maps each `partner_id` to its keys; the handlers pass the request's
+`partner_id`, so the store returns the right set. It's the same store as the Quick
+Start — serving several `partner_id`s is just calling `Register` more than once.
+
+The SDK ships **`MemoryKeyStore`** — an in-memory store you preload (the Quick
+Start store). It satisfies both `HandlersKeyStore` and `ClientKeyStore`:
+
+```go
+ks := boostx.NewMemoryKeyStore()
+// Register(partner, partnerPub, partnerPriv, boostxPub): partnerPub verifies GID
+// signatures, partnerPriv signs the response, boostxPub verifies inbound BoostX JWTs.
+ks.Register("partner-a", partnerAPub, partnerAPriv, boostxPubForA)
+ks.Register("partner-b", partnerBPub, partnerBPriv, boostxPubForB)
+
+boostx.MountHandlers(mux, "/api/boostx", betStore, ks)
+```
+
+`Register` is safe to call while handlers serve requests (onboarding, rotation).
+
+For keys that live outside the process — a database, secret manager, or KMS —
+implement `HandlersKeyStore` yourself (and `ClientKeyStore` for outbound). It's
+three small methods keyed on `partner_id`:
 
 ```go
 type HandlersKeyStore interface {
-    PartnerPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
-    PartnerPrivateKey(ctx context.Context, partner, user, bet string) (*ecdsa.PrivateKey, error)
-    BoostxPublicKey(ctx context.Context, partner, user, bet string) (*ecdsa.PublicKey, error)
+    PartnerPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error)
+    PartnerPrivateKey(ctx context.Context, partner string) (*ecdsa.PrivateKey, error)
+    BoostxPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error)
 }
+```
 
-boostx.MountHandlersWithKeyStorage(mux, "/api/boostx", betStore, yourKeyStore)
+### Outbound Signing
+
+To create a token for a specific partner_id, resolve that partner's key from the
+same store the handlers use, then call the token factory:
+
+```go
+params := boostx.GamePassParams{Partner: "partner-a", /* ... */}
+key, _ := ks.PartnerPrivateKey(ctx, params.Partner)
+gamePassJWT, _ := boostx.CreateGamePassToken(key, params)
 ```
 
 ## Testing

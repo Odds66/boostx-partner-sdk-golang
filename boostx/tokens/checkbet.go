@@ -22,20 +22,18 @@ type checkBetClaims struct {
 	RegisteredClaims
 }
 
-// ExtractCheckBetClaims extracts partner/user/bet from a CheckBet token without verification.
+// ExtractCheckBetPartner extracts the partner_id from a CheckBet token without verification.
 // WARNING: Use only for key lookup. Always verify with ParseCheckBetToken afterwards.
-func ExtractCheckBetClaims(checkBetToken string) (partner, user, bet string, err error) {
+func ExtractCheckBetPartner(checkBetToken string) (string, error) {
 	var claims checkBetClaims
 	if err := ExtractJWTClaims(checkBetToken, &claims); err != nil {
-		return "", "", "", fmt.Errorf("%w: %v", ErrInvalidCheckBet, err)
+		return "", fmt.Errorf("%w: %v", ErrInvalidCheckBet, err)
 	}
-
-	gid := &claims.CheckBet.GID
-	if gid.Partner == "" {
-		return "", "", "", fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+	partner := claims.CheckBet.GID.Partner
+	if partner == "" {
+		return "", fmt.Errorf("%w: gid.partner", ErrMissingClaim)
 	}
-
-	return gid.Partner, gid.User, gid.Bet, nil
+	return partner, nil
 }
 
 // ParseCheckBetToken parses a CheckBet token and verifies both the JWT signature
