@@ -30,6 +30,7 @@ func main() {
 		XMax:       10.0,
 		XDecimals:  4,
 		EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
+		Demo:       true, // mark this as a demo/test session (optional; omit for real bets)
 	})
 	if err != nil {
 		log.Fatalf("Failed to create GamePass: %v", err)
@@ -47,7 +48,8 @@ func main() {
 	fmt.Printf("  User: %s\n", parsedGamePass.User)
 	fmt.Printf("  Bet: %s\n", parsedGamePass.Bet)
 	fmt.Printf("  Amount: %.2f %s\n", parsedGamePass.Amount, parsedGamePass.Currency)
-	fmt.Printf("  X: %.2f (min: %.2f, max: %.2f, decimals: %d)\n\n", parsedGamePass.X, parsedGamePass.XMin, parsedGamePass.XMax, parsedGamePass.XDecimals)
+	fmt.Printf("  X: %.2f (min: %.2f, max: %.2f, decimals: %d)\n", parsedGamePass.X, parsedGamePass.XMin, parsedGamePass.XMax, parsedGamePass.XDecimals)
+	fmt.Printf("  Demo: %t\n\n", parsedGamePass.Demo)
 
 	// === BOOSTX SIDE: Create Booster response (simulated) ===
 	fmt.Println("=== Creating Booster Response (BoostX -> Partner) ===")

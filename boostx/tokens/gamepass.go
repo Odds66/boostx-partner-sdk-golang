@@ -19,6 +19,7 @@ type GamePass struct {
 	XMax       float64 // Maximum coefficient (xrange.max)
 	XDecimals  int     // Decimal places for X flooring (xrange.decimals); 0 = not set
 	EventTitle string  // Optional event title
+	Demo       bool    // Marks this as a demo/test session (gamepass.demo)
 	RegisteredClaims
 }
 
@@ -34,6 +35,7 @@ type GamePassParams struct {
 	XMax       float64
 	XDecimals  int    // optional; 0 = omit (backend defaults to 2), valid range [2, 6]
 	EventTitle string // optional
+	Demo       bool   // optional; true marks a demo/test session (omitted when false)
 }
 
 // Internal serialization types for the nested JWT payload.
@@ -59,6 +61,7 @@ type gamePassPayload struct {
 	Stake  stakeClaims  `json:"stake"`
 	XRange xRangeClaims `json:"xrange"`
 	Event  *eventClaims `json:"event,omitempty"`
+	Demo   bool         `json:"demo,omitempty"`
 }
 
 type gamePassClaims struct {
@@ -124,6 +127,7 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 				Max:      params.XMax,
 				Decimals: params.XDecimals,
 			},
+			Demo: params.Demo,
 		},
 		RegisteredClaims: RegisteredClaims{
 			IssuedAt: time.Now().Unix(),
@@ -164,6 +168,7 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 		XMax:             gp.XRange.Max,
 		XDecimals:        gp.XRange.Decimals,
 		EventTitle:       eventTitle,
+		Demo:             gp.Demo,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
 }
@@ -210,6 +215,7 @@ func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePa
 		XMax:             gp.XRange.Max,
 		XDecimals:        gp.XRange.Decimals,
 		EventTitle:       eventTitle,
+		Demo:             gp.Demo,
 		RegisteredClaims: claims.RegisteredClaims,
 	}, nil
 }

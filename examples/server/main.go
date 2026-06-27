@@ -71,6 +71,7 @@ func main() {
 			XMax:       10.0,
 			XDecimals:  2,
 			EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
+			Demo:       r.URL.Query().Get("demo") == "true", // optional: flag a demo/test session
 		}
 		// Resolve this partner's signing key from the same store the handlers use.
 		key, err := keyStore.PartnerPrivateKey(r.Context(), params.Partner)

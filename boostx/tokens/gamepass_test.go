@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 )
 
 func TestCreateGamePassToken(t *testing.T) {
@@ -206,6 +207,134 @@ func TestCreateGamePassToken_EventTitle(t *testing.T) {
 	}
 	if extracted.EventTitle != eventTitle {
 		t.Errorf("extract: expected event_title=%q, got %q", eventTitle, extracted.EventTitle)
+	}
+}
+
+func TestCreateGamePassToken_Demo(t *testing.T) {
+	privateKey, publicKey := generateTestKey(t)
+
+	token, err := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner-123",
+		User:     "user-456",
+		Bet:      "bet-789",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+		Demo:     true,
+	})
+	if err != nil {
+		t.Fatalf("CreateGamePassToken failed: %v", err)
+	}
+
+	gamePass, err := ParseGamePassToken(token, publicKey)
+	if err != nil {
+		t.Fatalf("ParseGamePassToken failed: %v", err)
+	}
+	if !gamePass.Demo {
+		t.Errorf("expected demo=true, got %v", gamePass.Demo)
+	}
+
+	extracted, err := ExtractGamePassClaims(token)
+	if err != nil {
+		t.Fatalf("ExtractGamePassClaims failed: %v", err)
+	}
+	if !extracted.Demo {
+		t.Errorf("extract: expected demo=true, got %v", extracted.Demo)
+	}
+
+	// Wire contract: when demo is set, it must be present on the wire — the
+	// backend treats an absent demo as false.
+	var raw struct {
+		GamePass struct {
+			Demo *bool `json:"demo"`
+		} `json:"gamepass"`
+	}
+	if err := ExtractJWTClaims(token, &raw); err != nil {
+		t.Fatalf("decode raw claims failed: %v", err)
+	}
+	if raw.GamePass.Demo == nil || !*raw.GamePass.Demo {
+		t.Errorf("expected wire demo=true present, got %v", raw.GamePass.Demo)
+	}
+}
+
+func TestCreateGamePassToken_DemoDefault(t *testing.T) {
+	privateKey, publicKey := generateTestKey(t)
+
+	token, err := CreateGamePassToken(privateKey, GamePassParams{
+		Partner:  "partner-123",
+		User:     "user-456",
+		Bet:      "bet-789",
+		Amount:   100.0,
+		Currency: "USD",
+		X:        2.0,
+		XMin:     1.1,
+		XMax:     10.0,
+	})
+	if err != nil {
+		t.Fatalf("CreateGamePassToken failed: %v", err)
+	}
+
+	gamePass, err := ParseGamePassToken(token, publicKey)
+	if err != nil {
+		t.Fatalf("ParseGamePassToken failed: %v", err)
+	}
+	if gamePass.Demo {
+		t.Errorf("expected demo=false (unset), got %v", gamePass.Demo)
+	}
+
+	// Wire contract: demo is omitted when false — the backend reads an absent
+	// demo as false, so the default round-trips without emitting the field.
+	var raw struct {
+		GamePass map[string]any `json:"gamepass"`
+	}
+	if err := ExtractJWTClaims(token, &raw); err != nil {
+		t.Fatalf("decode raw claims failed: %v", err)
+	}
+	if _, present := raw.GamePass["demo"]; present {
+		t.Error("expected demo omitted from wire when false, but it was present")
+	}
+}
+
+// TestParseGamePassToken_NonBooleanDemoRejected locks the wire contract that a
+// non-boolean gamepass.demo is rejected, matching the backend's strict gate
+// (commit f5e75db: `demo !== undefined && typeof demo !== 'boolean'` -> invalid).
+// Go's json.Unmarshal into a bool field errors on a string/number, so the demo
+// field never silently coerces. (Note: JSON null is the one value Go decodes to
+// false rather than rejecting, but the SDK is the signer and omitempty means it
+// never emits null — so that divergence is unreachable in practice.)
+func TestParseGamePassToken_NonBooleanDemoRejected(t *testing.T) {
+	privateKey, publicKey := generateTestKey(t)
+
+	gid, err := BuildGID("partner", "user", "bet", privateKey)
+	if err != nil {
+		t.Fatalf("BuildGID failed: %v", err)
+	}
+
+	for _, demo := range []any{"yes", "true", float64(1), 0} {
+		t.Run(fmt.Sprintf("demo=%v", demo), func(t *testing.T) {
+			claims := map[string]any{
+				"gamepass": map[string]any{
+					"gid":    gid,
+					"stake":  map[string]any{"amount": 100.0, "currency": "USD"},
+					"xrange": map[string]any{"init": 2.0},
+					"demo":   demo,
+				},
+				"iat": time.Now().Unix(),
+			}
+			token, err := SignJWT(claims, privateKey)
+			if err != nil {
+				t.Fatalf("SignJWT failed: %v", err)
+			}
+
+			if _, err := ParseGamePassToken(token, publicKey); !errors.Is(err, ErrInvalidGamePass) {
+				t.Errorf("ParseGamePassToken: expected ErrInvalidGamePass for demo=%v, got %v", demo, err)
+			}
+			if _, err := ExtractGamePassClaims(token); !errors.Is(err, ErrInvalidGamePass) {
+				t.Errorf("ExtractGamePassClaims: expected ErrInvalidGamePass for demo=%v, got %v", demo, err)
+			}
+		})
 	}
 }
 

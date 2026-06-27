@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.3
+
+### New Features
+- Add `Demo` field to `GamePass` and `GamePassParams` — a boolean that marks a demo/test bet via `gamepass.demo`
+- Optional on the wire: omit (or set to `false`) for real bets — only `true` is serialized
+
 ## v0.9.0
 
 ### Breaking Changes
