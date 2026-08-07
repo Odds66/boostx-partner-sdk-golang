@@ -118,6 +118,15 @@ The SDK provides typed errors:
 - `ErrInvalidSignature` - Invalid token signature
 - `ErrMissingClaim` / `ErrInvalidClaim` - Claim issues
 
+Some of these fire earlier than BoostX would. Every token builder rejects an
+empty `Partner`, `User` or `Bet` with `ErrMissingClaim`, while BoostX itself
+accepts an empty `user` or `bet` and treats it as an identifier like any other.
+The gate is deliberate: an empty bet id is a caller bug in every real case, and
+catching it before signing beats discovering it as an unattributable game
+session. Pass a placeholder if you genuinely need one. Identifiers must also be
+valid UTF-8 (`ErrInvalidClaim` otherwise): an invalid byte cannot survive JSON
+transport, so a token built from one could never verify.
+
 ## Advanced Usage
 
 ### Key Loading
@@ -178,15 +187,17 @@ err := client.SubmitSettlement(ctx, boostx.SettlementParams{
 |-------|----------|-------|
 | `Status` | yes | One of `win`, `lose`, `cancelled`, `refund`, `half_win`, `half_lose`, `cashout`, `unsettled` |
 | `Amount` / `Currency` | yes | What actually reached the player; `0` for a loss, and `0` is the only accepted amount when `Status` is `unsettled`. Currency is 3 or 4 uppercase letters, e.g. `USD` or `USDT` |
-| `Version` | yes | Increases per bet, need not be sequential — a millisecond timestamp works. At least `1`, and no larger than 2^53−1 |
+| `Version` | yes | Increases per bet, need not be sequential — a millisecond timestamp works. In `[0, 2^53−1]` |
 | `XSettle` | no | `*float64`. Your own coefficient the stake is multiplied by, before the boost. Finite and `>= 0` when supplied |
-| `SettledAt` | yes | When **you** settled the bet, epoch milliseconds. Must be no earlier than `1e12` (2001-09-09, which rejects seconds-scale timestamps) and no more than 24 hours ahead |
+| `SettledAt` | yes | When **you** settled the bet, epoch milliseconds. Must be no earlier than `1e12` (2001-09-09, which rejects seconds-scale timestamps) and no more than 24 hours ahead — clocks are expected to stay in sync with BoostX |
 
 `Version` orders repeated settlements of the same bet: retrying a failed call
 under the same version is safe, while correcting a settlement that already went
 through means sending it again under a strictly higher one — if a correction can
 land in the same millisecond as the original, bump the timestamp by one.
-Versions of different bets are unrelated.
+Versions of different bets are unrelated. `0` is a legal version, so the SDK
+cannot tell an unset `Version` from a deliberate zero and does not try — an
+omitted `Version` is sent as version `0`, not rejected.
 
 `XSettle` is a pointer because it is optional and `0` is a legal value. Leave it
 `nil` when there is no settled coefficient to report — most often for

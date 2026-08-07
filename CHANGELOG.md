@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.1
+
+### Bug Fixes
+- Fix GID signatures for identifiers containing `&`, `<`, `>`, U+2028 or U+2029. A GID signature covers the canonical bytes `{"partner":…,"user":…,"bet":…}`, which carry only the escapes JSON requires — `"`, `\` and the C0 controls. `encoding/json` escapes those five characters as well and offers no setting that stops it, so a GID built from an identifier containing any of them was signed over the wrong bytes, and every token carrying that GID was rejected as if the key were wrong. `BuildGID` and `VerifyGID` now use a hand-written encoder that matches the contract. Note the bug could not surface in a round-trip test — the two functions shared the faulty encoder and so agreed with each other; the new `TestCanonicalGIDPayloadMatchesJSONStringify` pins the bytes against independently generated vectors instead
+- Accept `0` as a settlement `Version`. The valid range is `[0, 2^53−1]`; `0` was previously reported as `ErrMissingClaim`, which refused a counter that legitimately starts at zero. There is consequently no "version missing" error any more — the zero value is a real version, indistinguishable from an unset field, and an omitted `Version` is sent as `0`
+- Reject identifiers that are not valid UTF-8 with `ErrInvalidClaim` when building a GID. Such an identifier cannot survive JSON transport — the token payload carries `U+FFFD` replacements while the GID signature covers the original bytes — so every token carrying it was rejected as a signature failure. `BuildGID` and the `Create*Token` functions that embed a GID now fail fast instead
+
 ## v0.10.0
 
 ### Breaking Changes
