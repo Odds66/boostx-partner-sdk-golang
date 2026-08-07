@@ -1,10 +1,10 @@
 package tokens
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"math/big"
 )
@@ -19,13 +19,60 @@ type GID struct {
 	Signature string `json:"signature"` // base64url-encoded ES256 signature over canonical {partner, user, bet}
 }
 
-// canonicalGIDPayload returns the canonical JSON bytes for GID signing/verification.
-func canonicalGIDPayload(partner, user, bet string) ([]byte, error) {
-	return json.Marshal(struct {
-		Partner string `json:"partner"`
-		User    string `json:"user"`
-		Bet     string `json:"bet"`
-	}{partner, user, bet})
+// canonicalGIDPayload returns the canonical JSON bytes a GID signature is computed over.
+// They are a wire contract: BoostX verifies the signature over its own encoding,
+// JavaScript's JSON.stringify({partner, user, bet}), which encoding/json cannot produce
+// at any setting: json.Marshal escapes <, > and & as
+// \u003c, \u003e and \u0026, which JSON.stringify does not; SetEscapeHTML(false) fixes those
+// three but still escapes U+2028 and U+2029 unconditionally, which JSON.stringify also leaves
+// literal. An identifier with any of the five would be signed over bytes BoostX never
+// reproduces and rejected as if the key were wrong — invisibly to round-trip tests,
+// since VerifyGID shares the encoder. Field order is fixed and must not change.
+func canonicalGIDPayload(partner, user, bet string) []byte {
+	var b bytes.Buffer
+	// Small over-estimate for the keys, quotes and separators; beats regrowing.
+	b.Grow(len(partner) + len(user) + len(bet) + 40)
+	b.WriteString(`{"partner":`)
+	writeJSONStringifyString(&b, partner)
+	b.WriteString(`,"user":`)
+	writeJSONStringifyString(&b, user)
+	b.WriteString(`,"bet":`)
+	writeJSONStringifyString(&b, bet)
+	b.WriteByte('}')
+	return b.Bytes()
+}
+
+// writeJSONStringifyString writes s as a JSON string literal using exactly the escapes
+// JavaScript's JSON.stringify applies: the two mandatory ones, the five short forms for
+// control characters that have them, and \u00XX for the remaining C0 range. Everything
+// else — including <, >, &, U+2028 and U+2029 — is written through verbatim.
+func writeJSONStringifyString(b *bytes.Buffer, s string) {
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '"':
+			b.WriteString(`\"`)
+		case c == '\\':
+			b.WriteString(`\\`)
+		case c == '\b':
+			b.WriteString(`\b`)
+		case c == '\f':
+			b.WriteString(`\f`)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c < 0x20:
+			fmt.Fprintf(b, `\u%04x`, c)
+		default:
+			// For valid UTF-8 this reproduces the source bytes — what TextEncoder produces.
+			b.WriteByte(c)
+		}
+	}
+	b.WriteByte('"')
 }
 
 // BuildGID creates a signed GID struct.
@@ -42,13 +89,7 @@ func BuildGID(partner, user, bet string, privateKey *ecdsa.PrivateKey) (*GID, er
 	if bet == "" {
 		return nil, fmt.Errorf("%w: bet", ErrMissingClaim)
 	}
-
-	data, err := canonicalGIDPayload(partner, user, bet)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal GID payload: %w", err)
-	}
-
-	hash := sha256.Sum256(data)
+	hash := sha256.Sum256(canonicalGIDPayload(partner, user, bet))
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign GID: %w", err)
@@ -78,11 +119,6 @@ func VerifyGID(gid *GID, publicKey *ecdsa.PublicKey) error {
 		return ErrInvalidGID
 	}
 
-	data, err := canonicalGIDPayload(gid.Partner, gid.User, gid.Bet)
-	if err != nil {
-		return fmt.Errorf("failed to marshal GID payload: %w", err)
-	}
-
 	sig, err := base64URLDecode(gid.Signature)
 	if err != nil {
 		return fmt.Errorf("%w: failed to decode signature", ErrInvalidGID)
@@ -92,7 +128,7 @@ func VerifyGID(gid *GID, publicKey *ecdsa.PublicKey) error {
 		return fmt.Errorf("%w: invalid signature length", ErrInvalidGID)
 	}
 
-	hash := sha256.Sum256(data)
+	hash := sha256.Sum256(canonicalGIDPayload(gid.Partner, gid.User, gid.Bet))
 	r := new(big.Int).SetBytes(sig[:32])
 	s := new(big.Int).SetBytes(sig[32:])
 
