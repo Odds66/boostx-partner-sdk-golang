@@ -12,9 +12,11 @@ type settlementRequest struct {
 	SettlementJWT string `json:"settlementJWT"`
 }
 
-// SubmitSettlement creates a signed settlement JWT from the given params and
-// sends it to the BoostX API. The signing key is resolved via the Client's
-// KeyStore.
+// SubmitSettlement creates a settlement JWT signed with the key the Client's
+// KeyStore holds for params.Partner and sends it to the BoostX API.
+//
+// Within one bet, retrying params.Version unchanged is a no-op; corrections go
+// out under a strictly higher version.
 func (c *Client) SubmitSettlement(ctx context.Context, params tokens.SettlementParams) error {
 	key, err := c.keys.PartnerPrivateKey(ctx, params.Partner)
 	if err != nil {

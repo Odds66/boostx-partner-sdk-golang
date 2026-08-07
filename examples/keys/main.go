@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx"
 	boostxtokens "github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
@@ -101,12 +102,15 @@ func main() {
 	fmt.Println("\n=== Creating Settlement (Partner -> BoostX) ===")
 
 	settlementToken, err := boostx.CreateSettlementToken(partnerPrivateKey, boostx.SettlementParams{
-		Partner:  "partner-123",
-		User:     "user-456",
-		Bet:      "bet-789",
-		Result:   "won",
-		Amount:   150.0,
-		Currency: "USD",
+		Partner:   "partner-123",
+		User:      "user-456",
+		Bet:       "bet-789",
+		Status:    "win",
+		Amount:    150.0,
+		Currency:  "USD",
+		Version:   time.Now().UnixMilli(), // must increase per bet; a timestamp works
+		XSettle:   new(2.5),               // your coefficient before the boost; nil if none
+		SettledAt: time.Now().UnixMilli(), // when you settled the bet, epoch ms
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Settlement: %v", err)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
@@ -26,6 +27,22 @@ func testKeyStore(t *testing.T) *keys.MemoryKeyStore {
 		t.Fatalf("register: %v", err)
 	}
 	return ks
+}
+
+// testSettlementParams returns a settlement the token layer accepts, so these
+// tests exercise the HTTP call rather than parameter validation.
+func testSettlementParams() tokens.SettlementParams {
+	return tokens.SettlementParams{
+		Partner:   "partner-1",
+		User:      "user-1",
+		Bet:       "bet-1",
+		Status:    "win",
+		Amount:    42.50,
+		Currency:  "USD",
+		Version:   time.Now().UnixMilli(),
+		XSettle:   new(2.5),
+		SettledAt: time.Now().UnixMilli(),
+	}
 }
 
 func TestSubmitSettlement_Success(t *testing.T) {
@@ -52,14 +69,7 @@ func TestSubmitSettlement_Success(t *testing.T) {
 
 	ks := testKeyStore(t)
 	c := New(ks, WithBaseURL(srv.URL))
-	err := c.SubmitSettlement(t.Context(), tokens.SettlementParams{
-		Partner:  "partner-1",
-		User:     "user-1",
-		Bet:      "bet-1",
-		Result:   "won",
-		Amount:   42.50,
-		Currency: "USD",
-	})
+	err := c.SubmitSettlement(t.Context(), testSettlementParams())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -84,9 +94,16 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 			wantMsg:    "invalid settlementJWT",
 		},
 		{
+			name:       "400 rejected field, status echoed in the body",
+			status:     http.StatusBadRequest,
+			body:       map[string]any{"status": 400, "error": "invalid-xsettle"},
+			wantStatus: 400,
+			wantMsg:    "invalid-xsettle",
+		},
+		{
 			name:       "401 unauthorized",
 			status:     http.StatusUnauthorized,
-			body:       map[string]string{"error": "unauthorized"},
+			body:       map[string]any{"status": 401, "error": "unauthorized"},
 			wantStatus: 401,
 			wantMsg:    "unauthorized",
 		},
@@ -95,6 +112,13 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 			status:     http.StatusNotFound,
 			wantStatus: 404,
 			wantMsg:    "Not Found",
+		},
+		{
+			name:       "500 not stored",
+			status:     http.StatusInternalServerError,
+			body:       map[string]any{"status": 500, "error": "not-stored"},
+			wantStatus: 500,
+			wantMsg:    "not-stored",
 		},
 	}
 	for _, tt := range tests {
@@ -112,14 +136,7 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 
 			ks := testKeyStore(t)
 			c := New(ks, WithBaseURL(srv.URL))
-			err := c.SubmitSettlement(t.Context(), tokens.SettlementParams{
-				Partner:  "partner-1",
-				User:     "user-1",
-				Bet:      "bet-1",
-				Result:   "won",
-				Amount:   10.0,
-				Currency: "USD",
-			})
+			err := c.SubmitSettlement(t.Context(), testSettlementParams())
 
 			apiErr, ok := errors.AsType[*APIError](err)
 			if !ok {

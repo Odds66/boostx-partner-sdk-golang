@@ -162,25 +162,52 @@ keyStore.Register("partner-id", nil, partnerKey, nil) // outbound needs only the
 client := boostx.NewClient(keyStore)
 
 err := client.SubmitSettlement(ctx, boostx.SettlementParams{
-    Partner:  "partner-id",
-    User:     "user-id",
-    Bet:      "bet-id",
-    Result:   "won",      // "won", "lost", "cancelled", "refunded"
-    Amount:   150.0,
-    Currency: "USD",
+    Partner:   "partner-id",
+    User:      "user-id",
+    Bet:       "bet-id",
+    Status:    "win",
+    Amount:    150.0,
+    Currency:  "USD",
+    Version:   time.Now().UnixMilli(),
+    XSettle:   new(2.5), // your own coefficient, before the BoostX boost
+    SettledAt: time.Now().UnixMilli(),
 })
 ```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `Status` | yes | One of `win`, `lose`, `cancelled`, `refund`, `half_win`, `half_lose`, `cashout`, `unsettled` |
+| `Amount` / `Currency` | yes | What actually reached the player; `0` for a loss, and `0` is the only accepted amount when `Status` is `unsettled`. Currency is 3 or 4 uppercase letters, e.g. `USD` or `USDT` |
+| `Version` | yes | Increases per bet, need not be sequential — a millisecond timestamp works. At least `1`, and no larger than 2^53−1 |
+| `XSettle` | no | `*float64`. Your own coefficient the stake is multiplied by, before the boost. Finite and `>= 0` when supplied |
+| `SettledAt` | yes | When **you** settled the bet, epoch milliseconds. Must be no earlier than `1e12` (2001-09-09, which rejects seconds-scale timestamps) and no more than 24 hours ahead |
+
+`Version` orders repeated settlements of the same bet: retrying a failed call
+under the same version is safe, while correcting a settlement that already went
+through means sending it again under a strictly higher one — if a correction can
+land in the same millisecond as the original, bump the timestamp by one.
+Versions of different bets are unrelated.
+
+`XSettle` is a pointer because it is optional and `0` is a legal value. Leave it
+`nil` when there is no settled coefficient to report — most often for
+`cancelled`, `refund` and `unsettled` — and point it at a number otherwise.
+`new(0.0)` means the coefficient really was `0` (the player lost everything),
+which is not the same as leaving the field out. Values below `1` are legal; the
+boost only ever applies to the part of a coefficient above `1`.
 
 To create a settlement token directly without submitting:
 
 ```go
 token, err := boostx.CreateSettlementToken(privateKey, boostx.SettlementParams{
-    Partner:  "partner-id",
-    User:     "user-id",
-    Bet:      "bet-id",
-    Result:   "won",
-    Amount:   150.0,
-    Currency: "USD",
+    Partner:   "partner-id",
+    User:      "user-id",
+    Bet:       "bet-id",
+    Status:    "cancelled",
+    Amount:    100.0,
+    Currency:  "USD",
+    Version:   time.Now().UnixMilli(),
+    XSettle:   nil, // no settled coefficient for this status
+    SettledAt: time.Now().UnixMilli(),
 })
 ```
 

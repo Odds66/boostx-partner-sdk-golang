@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.0
+
+### Breaking Changes
+- Rename `Result` to `Status` on `SettlementParams` and `Settlement`, and replace the four accepted values with eight: `win`, `lose`, `cancelled`, `refund`, `half_win`, `half_lose`, `cashout`, `unsettled`. `cancelled` carries over unchanged; `won` → `win`, `lost` → `lose`, `refunded` → `refund`. The retired spellings are rejected with `ErrInvalidClaim`
+- Add `Version int64` to `SettlementParams` and `Settlement` — **required**: `0` is reported as `ErrMissingClaim`, a negative value or one above 2^53−1 as `ErrInvalidClaim`. Version orders repeated settlements of one bet: retry a failed call unchanged, and correct a settlement that already went through by sending it again under a strictly higher version. Versions need not be sequential — a millisecond timestamp works, bumped by one if a correction lands in the same millisecond
+- Add `SettledAt int64` to `SettlementParams` and `Settlement` — **required**. Epoch milliseconds, recording when the partner settled the bet. Must be no earlier than `1e12` (2001-09-09, a floor that also rejects seconds-scale timestamps) and no more than 24 hours in the future; `0` is reported as `ErrMissingClaim`, any other out-of-range value as `ErrInvalidClaim`
+- Add `XSettle *float64` to `SettlementParams` and `Settlement` — optional. The partner's own coefficient the stake is multiplied by, before the boost. It is a pointer because `0` is a legal value: `nil` omits the field and means "no settled coefficient" (typically `cancelled`, `refund` and `unsettled`), while a pointer to `0` reports a coefficient that really was zero. An absent field and an explicit `null` parse alike, back to `nil`. When supplied it must be finite and `>= 0`; values below `1` are accepted
+- Reject a settlement whose `Status` is `unsettled` unless `Amount` is exactly `0` (`ErrInvalidClaim`)
+- Validate `SettlementParams.Currency` as 3 or 4 uppercase letters (e.g. `USD`, `USDT`); any other shape is rejected with `ErrInvalidClaim` before signing
+
+### Wire Format Changes
+- Settlement payload: `{iat, settlement: {gid, result, payout}}` → `{iat, settlement: {gid, status, payout, version, xSettle?, settledAt}}`
+- `xSettle` is the only optional member: it is omitted entirely when `XSettle` is `nil`, and serialized as `0` — never dropped — when it points at zero
+
 ## v0.9.3
 
 ### New Features

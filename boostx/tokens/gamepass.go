@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"math"
 	"time"
 )
 
@@ -25,17 +24,17 @@ type GamePass struct {
 
 // GamePassParams contains the parameters for creating a GamePass token.
 type GamePassParams struct {
-	Partner    string
-	User       string
-	Bet        string
-	Amount     float64
-	Currency   string
-	X          float64
-	XMin       float64
-	XMax       float64
-	XDecimals  int    // optional; 0 = omit (backend defaults to 2), valid range [2, 6]
-	EventTitle string // optional
-	Demo       bool   // optional; true marks a demo/test session (omitted when false)
+	Partner    string  // Partner identifier assigned by BoostX
+	User       string  // User identifier
+	Bet        string  // Bet identifier
+	Amount     float64 // Stake amount
+	Currency   string  // Currency code (e.g., "USD", "EUR")
+	X          float64 // Initial coefficient (xrange.init)
+	XMin       float64 // Minimum coefficient (xrange.min)
+	XMax       float64 // Maximum coefficient (xrange.max)
+	XDecimals  int     // Optional decimal places for X flooring; 0 = omit (defaults to 2), valid range [2, 6]
+	EventTitle string  // Optional event title
+	Demo       bool    // Optional; true marks a demo/test session (omitted when false)
 }
 
 // Internal serialization types for the nested JWT payload.
@@ -91,16 +90,16 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 	}
 
 	// Validate numeric fields
-	if params.Amount < 0 || math.IsNaN(params.Amount) || math.IsInf(params.Amount, 0) {
+	if !nonNegativeFinite(params.Amount) {
 		return "", fmt.Errorf("%w: amount", ErrInvalidClaim)
 	}
-	if params.X < 0 || math.IsNaN(params.X) || math.IsInf(params.X, 0) {
+	if !nonNegativeFinite(params.X) {
 		return "", fmt.Errorf("%w: x", ErrInvalidClaim)
 	}
-	if params.XMin < 0 || math.IsNaN(params.XMin) || math.IsInf(params.XMin, 0) {
+	if !nonNegativeFinite(params.XMin) {
 		return "", fmt.Errorf("%w: xmin", ErrInvalidClaim)
 	}
-	if params.XMax < 0 || math.IsNaN(params.XMax) || math.IsInf(params.XMax, 0) {
+	if !nonNegativeFinite(params.XMax) {
 		return "", fmt.Errorf("%w: xmax", ErrInvalidClaim)
 	}
 	if params.XDecimals != 0 && (params.XDecimals < 2 || params.XDecimals > 6) {

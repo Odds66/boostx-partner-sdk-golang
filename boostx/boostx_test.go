@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx"
 )
@@ -163,7 +164,9 @@ func Example_outbound() {
 
 	params := boostx.SettlementParams{
 		Partner: "partner-1", User: "user-1", Bet: "bet-1",
-		Result: "won", Amount: 150, Currency: "USD",
+		Status: "win", Amount: 150, Currency: "USD",
+		// XSettle: your coefficient before the boost; nil if none.
+		Version: time.Now().UnixMilli(), XSettle: new(2.5), SettledAt: time.Now().UnixMilli(),
 	}
 	key, err := store.PartnerPrivateKey(context.Background(), params.Partner)
 	if err != nil {
