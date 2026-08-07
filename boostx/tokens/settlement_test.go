@@ -242,7 +242,7 @@ func TestCreateSettlementToken_MissingClaims(t *testing.T) {
 		{"missing user", func(p *SettlementParams) { p.User = "" }},
 		{"missing bet", func(p *SettlementParams) { p.Bet = "" }},
 		{"missing currency", func(p *SettlementParams) { p.Currency = "" }},
-		{"missing version", func(p *SettlementParams) { p.Version = 0 }},
+		// Version is absent on purpose — 0 is a legal version, see TestCreateSettlementToken_Version.
 		{"missing settledAt", func(p *SettlementParams) { p.SettledAt = 0 }},
 	}
 
@@ -354,7 +354,7 @@ func TestCreateSettlementToken_Version(t *testing.T) {
 		version int64
 		wantErr error // nil when the value is accepted
 	}{
-		{"unset", 0, ErrMissingClaim},
+		{"zero", 0, nil},
 		{"one", 1, nil},
 		{"millisecond timestamp", 1785990000000, nil},
 		{"largest safe integer", 1<<53 - 1, nil},
@@ -428,6 +428,9 @@ func TestCreateSettlementToken_SettledAtBounds(t *testing.T) {
 		{"23 hours ahead", now.Add(23 * time.Hour).UnixMilli(), nil},
 		{"25 hours ahead", now.Add(25 * time.Hour).UnixMilli(), ErrInvalidClaim},
 		{"a year ahead", now.AddDate(1, 0, 0).UnixMilli(), ErrInvalidClaim},
+		// Wrong-scale timestamps land far past the ceiling and are rejected too.
+		{"microsecond-scale timestamp", now.UnixMicro(), ErrInvalidClaim},
+		{"nanosecond-scale timestamp", now.UnixNano(), ErrInvalidClaim},
 	}
 
 	for _, tc := range testCases {

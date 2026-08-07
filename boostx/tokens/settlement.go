@@ -36,7 +36,7 @@ type SettlementParams struct {
 
 	// Version orders repeated settlements of the same bet, highest wins: retry
 	// a failed call unchanged, send corrections under a strictly higher version.
-	// In [1, 2^53−1]; a millisecond timestamp works.
+	// In [0, 2^53−1]; a millisecond timestamp works.
 	Version int64
 
 	// XSettle is the partner's own base X at settlement, before the boost.
@@ -71,7 +71,8 @@ const (
 	// timestamps, which would date to 1970 when read as milliseconds.
 	minSettledAt int64 = 1_000_000_000_000
 
-	// maxSettledAtSkew is how far into the future SettlementParams.SettledAt may be.
+	// maxSettledAtSkew is how far ahead of now SettledAt may be: partner clocks are
+	// required to stay in sync with BoostX, so anything further is a caller bug.
 	maxSettledAtSkew = 24 * time.Hour
 
 	// maxSafeInteger is the largest integer a JSON number carries exactly (2^53 - 1).
@@ -117,9 +118,8 @@ func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams
 	if !validCurrencyCode(params.Currency) {
 		return "", fmt.Errorf("%w: currency must be 3 or 4 uppercase letters", ErrInvalidClaim)
 	}
-	if params.Version == 0 {
-		return "", fmt.Errorf("%w: version", ErrMissingClaim)
-	}
+	// Zero is a legal version: BoostX accepts [0, 2^53-1]. Rejecting it to catch an unset
+	// field would also reject a partner whose counter legitimately starts at 0.
 	if params.Version < 0 || params.Version > maxSafeInteger {
 		return "", fmt.Errorf("%w: version", ErrInvalidClaim)
 	}
@@ -129,6 +129,9 @@ func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams
 	if params.SettledAt == 0 {
 		return "", fmt.Errorf("%w: settledAt", ErrMissingClaim)
 	}
+	// Clocks are required to be in sync with BoostX, so the 24h ceiling is enforced
+	// against the local clock; beyond it is a caller bug — most often a micro- or
+	// nanosecond-scale timestamp.
 	if params.SettledAt < minSettledAt || params.SettledAt > time.Now().Add(maxSettledAtSkew).UnixMilli() {
 		return "", fmt.Errorf("%w: settledAt", ErrInvalidClaim)
 	}
