@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math/big"
+	"unicode/utf8"
 )
 
 // GID (Game ID) uniquely identifies a game session.
@@ -75,7 +76,7 @@ func writeJSONStringifyString(b *bytes.Buffer, s string) {
 	b.WriteByte('"')
 }
 
-// BuildGID creates a signed GID struct.
+// BuildGID creates a signed GID struct. Identifiers must be valid UTF-8.
 func BuildGID(partner, user, bet string, privateKey *ecdsa.PrivateKey) (*GID, error) {
 	if privateKey == nil {
 		return nil, ErrInvalidPrivateKey
@@ -89,6 +90,18 @@ func BuildGID(partner, user, bet string, privateKey *ecdsa.PrivateKey) (*GID, er
 	if bet == "" {
 		return nil, fmt.Errorf("%w: bet", ErrMissingClaim)
 	}
+	// Invalid UTF-8 travels as U+FFFD (encoding/json) while the signature covers the
+	// raw bytes — such a token can never verify. Fail fast here instead.
+	if !utf8.ValidString(partner) {
+		return nil, fmt.Errorf("%w: partner is not valid UTF-8", ErrInvalidClaim)
+	}
+	if !utf8.ValidString(user) {
+		return nil, fmt.Errorf("%w: user is not valid UTF-8", ErrInvalidClaim)
+	}
+	if !utf8.ValidString(bet) {
+		return nil, fmt.Errorf("%w: bet is not valid UTF-8", ErrInvalidClaim)
+	}
+
 	hash := sha256.Sum256(canonicalGIDPayload(partner, user, bet))
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
 	if err != nil {

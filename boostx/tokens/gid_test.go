@@ -88,6 +88,31 @@ func TestBuildGID_MissingClaims(t *testing.T) {
 	}
 }
 
+func TestBuildGID_InvalidUTF8(t *testing.T) {
+	privateKey, _ := generateTestKey(t)
+
+	bad := "id\xff" // a stray Latin-1 byte, not valid UTF-8
+	testCases := []struct {
+		name    string
+		partner string
+		user    string
+		bet     string
+	}{
+		{"partner", bad, "user", "bet"},
+		{"user", "partner", bad, "bet"},
+		{"bet", "partner", "user", bad},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := BuildGID(tc.partner, tc.user, tc.bet, privateKey)
+			if !errors.Is(err, ErrInvalidClaim) {
+				t.Errorf("expected ErrInvalidClaim, got %v", err)
+			}
+		})
+	}
+}
+
 func TestVerifyGID_NilPublicKey(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 
