@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -41,10 +42,12 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 // writeKeyError maps a key-store lookup failure to a response: an unknown
-// partner_id is a client error (400); anything else is a backend failure (500).
-func writeKeyError(w http.ResponseWriter, err error, what string) {
+// partner_id is a client error (400) naming the id the request carried, so a
+// partner registered under a different id can see the mismatch; anything else
+// is a backend failure (500).
+func writeKeyError(w http.ResponseWriter, err error, what, partner string) {
 	if errors.Is(err, keys.ErrUnknownPartner) {
-		writeError(w, http.StatusBadRequest, "unknown partner")
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown partner %q", partner))
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "failed to get "+what)

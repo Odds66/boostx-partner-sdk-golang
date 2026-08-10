@@ -8,6 +8,9 @@ import (
 // KeyStore provides the keys needed by every handler the SDK mounts:
 // public keys for verifying inbound tokens and the partner private key for
 // signing the /verify-keys response.
+//
+// Implementations must fail for a partner_id they do not serve (wrap
+// keys.ErrUnknownPartner), never fall back to a fixed key set.
 type KeyStore interface {
 	// PartnerPublicKey returns the partner's public key for verifying GID signatures.
 	PartnerPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error)

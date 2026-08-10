@@ -59,8 +59,11 @@ type (
 	APIError        = client.APIError
 )
 
-// Sentinel errors for token parsing and validation.
+// Sentinel errors for token parsing and validation. ErrUnknownPartner is the
+// one custom key stores wrap for a partner_id they do not serve; the mounted
+// handlers map it to a 400.
 var (
+	ErrUnknownPartner    = keys.ErrUnknownPartner
 	ErrInvalidPrivateKey = tokens.ErrInvalidPrivateKey
 	ErrInvalidPublicKey  = tokens.ErrInvalidPublicKey
 	ErrInvalidGamePass   = tokens.ErrInvalidGamePass

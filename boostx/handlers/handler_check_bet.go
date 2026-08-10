@@ -47,13 +47,13 @@ func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	boostxPubKey, err := h.keys.BoostxPublicKey(r.Context(), partner)
 	if err != nil {
-		writeKeyError(w, err, "boostx key")
+		writeKeyError(w, err, "boostx key", partner)
 		return
 	}
 
 	partnerPubKey, err := h.keys.PartnerPublicKey(r.Context(), partner)
 	if err != nil {
-		writeKeyError(w, err, "partner key")
+		writeKeyError(w, err, "partner key", partner)
 		return
 	}
 

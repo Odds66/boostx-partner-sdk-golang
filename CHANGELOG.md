@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.11.0
+
+### New Features
+- Re-export `ErrUnknownPartner` from the root `boostx` package. Custom key stores wrap it for a partner_id they do not serve to opt into the handlers' 400 mapping; it was previously reachable only via the `boostx/keys` subpackage
+
+### Improvements
+- Report a key-store unknown-partner failure on `/verify-keys` as the `iss-aud` reason (`invalid verifyKeysJWT: iss-aud (unknown partner "<id>")`) instead of a bare `unknown partner` 400. The request's `aud` naming a partner the deployment does not serve is an id mismatch, not a key failure, and key verification now attributes it to the partner-id configuration
+- Name the offending id in key-lookup rejections across all handlers: `unknown partner "<id>"` instead of `unknown partner`, so a deployment registered under a different id can see from its own responses which id BoostX actually sent
+- Document that `SettlementParams.Partner` and `GamePassParams.Partner` must be the BoostX-assigned partner id — the same value inbound tokens carry in `gid.partner`, not an internal id — and that key-store implementations must reject ids they do not serve rather than fall back to a default key set: an unkeyed single-tenant store passes every inbound check under any id and hides the mismatch until outbound calls are rejected. The README shows the explicit id check a custom single-tenant store needs
+
 ## v0.10.1
 
 ### Bug Fixes

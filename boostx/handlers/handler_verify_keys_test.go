@@ -5,11 +5,13 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
@@ -264,6 +266,51 @@ func TestVerifyKeysHandler_PrivateKeyLookupFailure(t *testing.T) {
 	}
 	if msg := decodeErrorBody(t, rec.Body.Bytes()); msg != "failed to get partner private key" {
 		t.Errorf("unexpected error message: %q", msg)
+	}
+}
+
+// TestVerifyKeysHandler_UnknownPartnerID asserts a key store reporting an
+// unknown partner_id surfaces as the "iss-aud" reason: the aud names a partner
+// this deployment does not serve, which is an id mismatch, not a key failure.
+func TestVerifyKeysHandler_UnknownPartnerID(t *testing.T) {
+	keyStore, boostxPriv, _ := fullStore(t)
+	keyStore.pubErr = fmt.Errorf("%w %q", keys.ErrUnknownPartner, testPartnerID)
+	handler := NewVerifyKeysHandler(keyStore)
+
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(boostxPriv, testPartnerID, 1)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	want := `invalid verifyKeysJWT: iss-aud (unknown partner "partner-abc")`
+	if got := decodeErrorBody(t, rec.Body.Bytes()); got != want {
+		t.Errorf("expected error=%q, got %q", want, got)
+	}
+}
+
+// TestVerifyKeysHandler_UnknownPartnerPrivateKey asserts the iss-aud mapping
+// covers the private-key lookup too: a store that serves the boostx key but
+// reports ErrUnknownPartner for the signing key is still signalling an id
+// this deployment does not serve, not a key failure.
+func TestVerifyKeysHandler_UnknownPartnerPrivateKey(t *testing.T) {
+	keyStore, boostxPriv, _ := fullStore(t)
+	keyStore.privErr = fmt.Errorf("%w %q", keys.ErrUnknownPartner, testPartnerID)
+	handler := NewVerifyKeysHandler(keyStore)
+
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(boostxPriv, testPartnerID, 1)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	want := `invalid verifyKeysJWT: iss-aud (unknown partner "partner-abc")`
+	if got := decodeErrorBody(t, rec.Body.Bytes()); got != want {
+		t.Errorf("expected error=%q, got %q", want, got)
 	}
 }
 

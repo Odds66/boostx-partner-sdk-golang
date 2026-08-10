@@ -27,7 +27,7 @@ type Settlement struct {
 
 // SettlementParams contains the parameters for creating a Settlement token.
 type SettlementParams struct {
-	Partner  string  // Partner identifier assigned by BoostX
+	Partner  string  // Partner identifier assigned by BoostX (matches gid.partner)
 	User     string  // User identifier
 	Bet      string  // Bet identifier
 	Status   string  // Bet outcome: win, lose, cancelled, refund, half_win, half_lose, cashout or unsettled

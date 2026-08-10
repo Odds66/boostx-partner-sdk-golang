@@ -24,7 +24,7 @@ type GamePass struct {
 
 // GamePassParams contains the parameters for creating a GamePass token.
 type GamePassParams struct {
-	Partner    string  // Partner identifier assigned by BoostX
+	Partner    string  // Partner identifier assigned by BoostX (matches gid.partner)
 	User       string  // User identifier
 	Bet        string  // Bet identifier
 	Amount     float64 // Stake amount

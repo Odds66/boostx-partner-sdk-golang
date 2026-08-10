@@ -318,7 +318,8 @@ func TestSetBoostHandler_UnknownPartner(t *testing.T) {
 
 	var resp errorResponse
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if rec.Code != http.StatusBadRequest || resp.Error != "unknown partner" {
-		t.Errorf("unknown partner: expected 400 %q, got %d %q", "unknown partner", rec.Code, resp.Error)
+	want := `unknown partner "partner-123"`
+	if rec.Code != http.StatusBadRequest || resp.Error != want {
+		t.Errorf("unknown partner: expected 400 %q, got %d %q", want, rec.Code, resp.Error)
 	}
 }

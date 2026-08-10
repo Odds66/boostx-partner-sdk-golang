@@ -191,6 +191,13 @@ err := client.SubmitSettlement(ctx, boostx.SettlementParams{
 | `XSettle` | no | `*float64`. Your own coefficient the stake is multiplied by, before the boost. Finite and `>= 0` when supplied |
 | `SettledAt` | yes | When **you** settled the bet, epoch milliseconds. Must be no earlier than `1e12` (2001-09-09, which rejects seconds-scale timestamps) and no more than 24 hours ahead — clocks are expected to stay in sync with BoostX |
 
+`Partner` must be the partner id **assigned by BoostX** — the same value every
+inbound Booster and CheckBet token carries in `gid.partner` — not an internal
+id of your own. The SDK cannot tell the two apart (both are valid strings and
+your key store may well hold a key under either), but BoostX rejects a
+settlement signed under an id it did not assign, with HTTP 404. The same rule
+applies to `GamePassParams.Partner`.
+
 `Version` orders repeated settlements of the same bet: retrying a failed call
 under the same version is safe, while correcting a settlement that already went
 through means sending it again under a strictly higher one — if a correction can
@@ -254,6 +261,31 @@ type HandlersKeyStore interface {
     BoostxPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error)
 }
 ```
+
+A custom store must treat its `partner` argument as authoritative: return an
+error (wrap `boostx.ErrUnknownPartner` to get the 400 mapping) for an id you do
+not serve, never a fixed key set regardless of the id. A store that ignores
+the argument answers for whatever id the inbound token names — so if the
+partner id in your own configuration ever disagrees with the one BoostX
+assigned, every inbound check still passes locally and the mismatch only
+surfaces as rejected outbound calls. Even a single-tenant store therefore
+gates on the id — either a `MemoryKeyStore` with one `Register` call, or an
+explicit check:
+
+```go
+func (s myKeyStore) PartnerPrivateKey(ctx context.Context, partner string) (*ecdsa.PrivateKey, error) {
+    if partner != s.partnerID { // the id BoostX assigned, from your own config
+        return nil, fmt.Errorf("%w %q", boostx.ErrUnknownPartner, partner)
+    }
+    return s.priv, nil
+}
+```
+
+With the store gating honestly, a token addressed to any other id is rejected
+with `unknown partner "<id>"` — reported on `/verify-keys` as an `iss-aud`
+failure — and your own outbound signing fails just as loudly, so a wrong
+configured id becomes an immediate, visible error in both directions instead
+of a silent echo.
 
 ### Outbound Signing
 
