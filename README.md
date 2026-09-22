@@ -146,6 +146,15 @@ publicKey, err := boostx.LoadPublicKeyFromPEM(pemBytes)
 
 For testing, partners can create GamePass tokens:
 
+**Call this when the player opens the game, not before.** BoostX accepts a GamePassJWT only within
+300 seconds of its `iat`, and only at the moment the game is opened — a URL built ahead of time and
+clicked later will not start.
+
+`CreateGamePassToken` stamps `iat` with the time of the call and emits no `exp`, which BoostX
+enforces with no tolerance for skew. The window is therefore entirely a question of when you call
+it. The check is two-sided, so keep the clocks of every host that calls it NTP-synced: a host
+running fast fails the same way a stale token does.
+
 ```go
 token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
     Partner:    "partner-id",
