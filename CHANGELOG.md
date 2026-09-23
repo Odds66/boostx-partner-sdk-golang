@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.1
+
+### Improvements
+- Document that BoostX accepts a GamePassJWT only within 300 seconds of its `iat`, and only at the moment the game is opened, so `CreateGamePassToken` must be called when the player opens the game rather than ahead of time. The check is two-sided, so hosts calling it need synced clocks. No API or behaviour change
+
 ## v0.11.0
 
 ### New Features
