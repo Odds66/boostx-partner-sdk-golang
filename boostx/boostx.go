@@ -181,6 +181,18 @@ func ExtractCheckBetPartner(checkBetJWT string) (string, error) {
 	return tokens.ExtractCheckBetPartner(checkBetJWT)
 }
 
+// PlayerX returns the X the player saw: 1 + (xBase - 1) * boost, with xBase and
+// the result both floored to decimals as BoostX does.
+func PlayerX(xBase, boost float64, decimals int) float64 {
+	return tokens.PlayerX(xBase, boost, decimals)
+}
+
+// FloorX floors x to decimals places as BoostX does; decimals: 0 (treated as
+// 2) or 2–6.
+func FloorX(x float64, decimals int) float64 {
+	return tokens.FloorX(x, decimals)
+}
+
 // NewMemoryKeyStore creates an empty in-memory multi-tenant MemoryKeyStore.
 // Register each partner_id's keys, then pass it to MountHandlers, the handler
 // constructors, or NewClient.

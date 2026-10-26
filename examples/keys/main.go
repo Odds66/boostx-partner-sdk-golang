@@ -17,6 +17,9 @@ func main() {
 	partnerPrivateKey, partnerPublicKey := generateTestKeyPair("Partner")
 	boostxPrivateKey, boostxPublicKey := generateTestKeyPair("BoostX")
 
+	// The bet's xrange.init and xrange.decimals, kept in the partner's DB.
+	xBase, decimals := 2.0, 4
+
 	// === PARTNER SIDE: Create GamePass ===
 	fmt.Println("=== Creating GamePass (Partner -> BoostX) ===")
 
@@ -26,10 +29,10 @@ func main() {
 		Bet:        "bet-789",
 		Amount:     100.0,
 		Currency:   "USD",
-		X:          2.0,
+		X:          xBase,
 		XMin:       1.1,
 		XMax:       10.0,
-		XDecimals:  4,
+		XDecimals:  decimals,
 		EventTitle: "Real Madrid vs Barcelona — Match Winner: Real Madrid",
 		Demo:       true, // mark this as a demo/test session (optional; omit for real bets)
 	})
@@ -77,25 +80,29 @@ func main() {
 	fmt.Printf("  User: %s\n", result.User)
 	fmt.Printf("  Bet: %s\n\n", result.Bet)
 
-	// Partner looks up X from own DB using bet ID, then calculates coefficient
-	originalX := 2.0 // Would come from partner's DB
-	finalCoefficient := boostxtokens.CalculateFinalCoefficient(originalX, result.Boost)
+	// The X the player saw, from the bet's xBase and decimals and the Booster's boost.
+	finalCoefficient := boostx.PlayerX(xBase, result.Boost, decimals)
 	fmt.Printf("Final Coefficient Calculation:\n")
-	fmt.Printf("  Formula: X' = 1 + (X - 1) * boost\n")
-	fmt.Printf("  X' = 1 + (%.2f - 1) * %.2f = %.2f\n\n",
-		originalX, result.Boost, finalCoefficient)
+	fmt.Printf("  Formula: X' = FloorX(1 + (FloorX(X, decimals) - 1) * boost, decimals)\n")
+	fmt.Printf("  X' = PlayerX(%v, %v, %d) = %v\n\n",
+		xBase, result.Boost, decimals, finalCoefficient)
 
 	// Demonstrate coefficient calculation directly
 	fmt.Println("=== Coefficient Calculation Examples ===")
-	examples := []struct{ x, boost float64 }{
-		{2.0, 1.0}, // No boost
-		{2.0, 1.5}, // 50% boost
-		{2.0, 2.0}, // 100% boost
-		{3.0, 1.5}, // Different X
+	examples := []struct {
+		x, boost float64
+		decimals int
+	}{
+		{2.0, 1.0, 2},       // No boost
+		{2.0, 1.5, 2},       // 50% boost
+		{3.0, 1.5, 2},       // Different X
+		{14.95, 1.2, 2},     // 17.74; a naive math.Floor(x*100)/100 gives 17.73
+		{49.503282, 1.5, 6}, // 73.754923 at six decimals
+		{1.857, 1.5, 2},     // 2.27: X is floored to 1.85 before the boost
 	}
 	for _, ex := range examples {
-		final := boostxtokens.CalculateFinalCoefficient(ex.x, ex.boost)
-		fmt.Printf("  X=%.1f, Boost=%.1f -> Final=%.2f\n", ex.x, ex.boost, final)
+		final := boostx.PlayerX(ex.x, ex.boost, ex.decimals)
+		fmt.Printf("  X=%v, Boost=%v, decimals=%d -> Final=%v\n", ex.x, ex.boost, ex.decimals, final)
 	}
 
 	// === Settlement example ===

@@ -194,6 +194,26 @@ BoostX refuses a gamepass that starts a bet unless `X`, `XMin` and `XMax` lie wi
 and `XMin < XMax` (compared after flooring to `XDecimals`, which must be 2–6); the SDK checks only
 `XDecimals`.
 
+### Calculating X
+
+`PlayerX(xBase, boost, decimals)` returns the X the player saw for a Booster token's `boost`:
+`1 + (xBase - 1) × boost`, floored to the bet's `xrange.decimals`. BoostX floors `xBase` onto that
+grid when it receives the gamepass and boosts the floored value, and floors by its own rule
+([Coefficient calculation](https://docs.boostx.cloud/rounds/#coefficient-calculation)), which a
+plain `math.Floor(x*100)/100` does not reproduce in every round:
+
+```go
+x := boostx.PlayerX(xBase, booster.Boost, decimals)
+```
+
+`xBase` is the `X` of the gamepass the round was played under: after the player reopens the game on
+a new `X`, BoostX boosts that one. A replayed regular round keeps the `X` it was first played on,
+while a re-sent jackpot round is played on the `X` of the gamepass that re-sends it
+([Coefficient calculation](https://docs.boostx.cloud/rounds/#coefficient-calculation)). `decimals`
+is the bet's `XDecimals`; `0` (unset) floors to the default `2`. With `xBase` `1.857`, `boost` `1.5`
+and two decimals, the player saw `2.27`, not the `2.28` that flooring only the result gives.
+`FloorX(x, decimals)` is the flooring step alone.
+
 ### Submitting Settlements
 
 Use the client to sign and submit settlement tokens to BoostX:
