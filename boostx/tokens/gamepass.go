@@ -14,15 +14,16 @@ type GamePass struct {
 	Amount     float64 // Stake amount
 	Currency   string  // Currency code (e.g., "USD", "EUR")
 	X          float64 // Initial coefficient (xrange.init)
-	XMin       float64 // Minimum coefficient (xrange.min)
-	XMax       float64 // Maximum coefficient (xrange.max)
+	XMin       float64 // Minimum coefficient (xrange.min); 0 = not set
+	XMax       float64 // Maximum coefficient (xrange.max); 0 = not set
 	XDecimals  int     // Decimal places for X flooring (xrange.decimals); 0 = not set
 	EventTitle string  // Optional event title
 	Demo       bool    // Marks this as a demo/test session (gamepass.demo)
 	RegisteredClaims
 }
 
-// GamePassParams contains the parameters for creating a GamePass token.
+// GamePassParams contains the parameters for creating a GamePass token. BoostX
+// requires X, XMin and XMax in [1.1, 200] and XMin < XMax; the SDK checks only XDecimals.
 type GamePassParams struct {
 	Partner    string  // Partner identifier assigned by BoostX (matches gid.partner)
 	User       string  // User identifier
@@ -30,8 +31,8 @@ type GamePassParams struct {
 	Amount     float64 // Stake amount
 	Currency   string  // Currency code (e.g., "USD", "EUR")
 	X          float64 // Initial coefficient (xrange.init)
-	XMin       float64 // Minimum coefficient (xrange.min)
-	XMax       float64 // Maximum coefficient (xrange.max)
+	XMin       float64 // Optional minimum coefficient; 0 = omit (defaults to 1.1)
+	XMax       float64 // Optional maximum coefficient; 0 = omit (defaults to 200)
 	XDecimals  int     // Optional decimal places for X flooring; 0 = omit (defaults to 2), valid range [2, 6]
 	EventTitle string  // Optional event title
 	Demo       bool    // Optional; true marks a demo/test session (omitted when false)
@@ -46,8 +47,8 @@ type stakeClaims struct {
 
 type xRangeClaims struct {
 	Init     float64 `json:"init"`
-	Min      float64 `json:"min"`
-	Max      float64 `json:"max"`
+	Min      float64 `json:"min,omitempty"`
+	Max      float64 `json:"max,omitempty"`
 	Decimals int     `json:"decimals,omitempty"`
 }
 

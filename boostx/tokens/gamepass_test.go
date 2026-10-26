@@ -125,6 +125,56 @@ func TestCreateGamePassToken_XDecimalsDefault(t *testing.T) {
 	}
 }
 
+// TestCreateGamePassToken_XRangeBoundsOnTheWire locks that an unset XMin/XMax
+// leaves the key out of xrange (BoostX then applies its defaults) rather than
+// sending 0, which BoostX reads as a bound and rejects.
+func TestCreateGamePassToken_XRangeBoundsOnTheWire(t *testing.T) {
+	privateKey, _ := generateTestKey(t)
+
+	xrange := func(xmin, xmax float64) map[string]any {
+		t.Helper()
+		token, err := CreateGamePassToken(privateKey, GamePassParams{
+			Partner:  "partner-123",
+			User:     "user-456",
+			Bet:      "bet-789",
+			Amount:   100.0,
+			Currency: "USD",
+			X:        2.0,
+			XMin:     xmin,
+			XMax:     xmax,
+		})
+		if err != nil {
+			t.Fatalf("CreateGamePassToken failed: %v", err)
+		}
+		var raw struct {
+			GamePass struct {
+				XRange map[string]any `json:"xrange"`
+			} `json:"gamepass"`
+		}
+		if err := ExtractJWTClaims(token, &raw); err != nil {
+			t.Fatalf("decode raw claims failed: %v", err)
+		}
+		return raw.GamePass.XRange
+	}
+
+	unset := xrange(0, 0)
+	for _, key := range []string{"min", "max"} {
+		if v, ok := unset[key]; ok {
+			t.Errorf("unset bound: expected no %q key, got %v", key, v)
+		}
+	}
+
+	set := xrange(1.5, 50)
+	if set["min"] != 1.5 || set["max"] != 50.0 {
+		t.Errorf("set bounds: expected min=1.5 max=50, got min=%v max=%v", set["min"], set["max"])
+	}
+
+	onlyMax := xrange(0, 50)
+	if _, ok := onlyMax["min"]; ok || onlyMax["max"] != 50.0 {
+		t.Errorf("only max set: expected no min and max=50, got %v", onlyMax)
+	}
+}
+
 func TestCreateGamePassToken_XDecimalsValidation(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 

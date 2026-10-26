@@ -169,6 +169,13 @@ token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
 })
 ```
 
+`XMin`, `XMax` and `XDecimals` are optional. Left at `0`, each is left out of the token and BoostX
+applies its default: `1.1`, `200` and `2` decimal places.
+
+BoostX refuses a gamepass that starts a bet unless `X`, `XMin` and `XMax` lie within `[1.1, 200]`
+and `XMin < XMax` (compared after flooring to `XDecimals`, which must be 2–6); the SDK checks only
+`XDecimals`.
+
 ### Submitting Settlements
 
 Use the client to sign and submit settlement tokens to BoostX:
