@@ -6,6 +6,8 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 )
 
 // Booster contains the parsed Booster token along with the extracted GID.
@@ -18,10 +20,27 @@ type Booster struct {
 	Jackpot bool    // Whether jackpot was triggered
 }
 
-// CalculateFinalCoefficient computes the boosted coefficient using the formula:
-// X' = 1 + (X - 1) * boost
+// CalculateFinalCoefficient returns the raw 1 + (x - 1) * boost, without fused
+// multiply-add, as BoostX computes it. PlayerX gives the X the player saw.
 func CalculateFinalCoefficient(x, boost float64) float64 {
-	return 1 + (x-1)*boost
+	return 1 + float64((x-1)*boost) // the conversion stops FMA fusion on arm64 and others
+}
+
+// FloorX floors x to decimals places as BoostX does, rounding x * 10^decimals
+// to 15 significant digits first. decimals: 0 (treated as 2) or 2–6.
+func FloorX(x float64, decimals int) float64 {
+	if decimals == 0 {
+		decimals = 2
+	}
+	scale := math.Pow10(decimals)
+	scaled, _ := strconv.ParseFloat(strconv.FormatFloat(x*scale, 'g', 15, 64), 64)
+	return math.Floor(scaled) / scale
+}
+
+// PlayerX returns the X the player saw for a bet's xBase (xrange.init), a
+// Booster's boost and the bet's xrange.decimals. BoostX floors xBase first.
+func PlayerX(xBase, boost float64, decimals int) float64 {
+	return FloorX(CalculateFinalCoefficient(FloorX(xBase, decimals), boost), decimals)
 }
 
 // boosterPayload contains the fields nested under the "booster" root.
