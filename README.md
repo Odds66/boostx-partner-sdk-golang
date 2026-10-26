@@ -55,7 +55,25 @@ type BetStoreUpdater interface {
 }
 ```
 
-- **SetBoost** - Stores the boost update from BoostX
+- **SetBoost** - Applies the boost update from BoostX
+
+The SDK verifies each Booster token's signatures but does not reject replays —
+bet-flow tokens carry no expiry, and the SDK does not track rounds. BoostX can
+send a round again, or deliver an older round late, so the replay rule is
+yours to enforce in `SetBoost`:
+
+- Find the bet by `Partner`, `User` and `Bet` together; a bet id alone is not
+  unique across partner ids.
+- Apply the update only when `booster.Round` is greater than the last round
+  you applied for that bet. For any other round return `nil`, which answers
+  `200`, and change nothing.
+- Check and write atomically (one lock or one conditional update), so a late
+  round cannot overwrite a newer one.
+- Return an error only for a round you have not applied and will not apply.
+  The handler answers `500` and the round is not recorded, so a bet you updated
+  before refusing would fail the round check on every replay.
+
+[examples/server](examples/server/betstore.go) implements these rules.
 
 To enable the optional `/check-bet` endpoint, also implement `BetStoreChecker`:
 

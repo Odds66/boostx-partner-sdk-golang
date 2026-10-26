@@ -12,7 +12,8 @@ import (
 // Only SetBoost is required. To enable the optional /check-bet endpoint,
 // also implement BetStoreChecker.
 type BetStoreUpdater interface {
-	// SetBoost stores the boost update, returns error if validation fails
+	// SetBoost applies a round only if it is above the last one applied for
+	// the bet, else returns nil (200); the SDK does not filter replays.
 	SetBoost(ctx context.Context, booster *tokens.Booster) error
 }
 

@@ -48,10 +48,12 @@ func main() {
 		}
 	}
 
-	// In-memory bet store with a sample bet per partner flow.
+	// In-memory bet store with a sample bet per partner_id.
+	betIDs := map[string]string{partnerA: "bet-a", partnerB: "bet-b"}
 	betStore := NewMemoryBetStore()
-	betStore.AddBet("bet-a")
-	betStore.AddBet("bet-b")
+	for pid, bet := range betIDs {
+		betStore.AddBet(pid, userID, bet)
+	}
 
 	mux := http.NewServeMux()
 	// GET /api/test/gamepass?partner=partner-a — sign a GamePass for that partner.
@@ -63,7 +65,7 @@ func main() {
 		params := boostx.GamePassParams{
 			Partner:    pid,
 			User:       userID,
-			Bet:        "bet-a",
+			Bet:        betIDs[pid],
 			Amount:     100.0,
 			Currency:   "USD",
 			X:          2.0,
