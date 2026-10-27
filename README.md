@@ -187,6 +187,9 @@ token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
 })
 ```
 
+`Amount` must be greater than `0`: BoostX refuses a gamepass whose stake is `0` on every entry, so
+`CreateGamePassToken` rejects it with `ErrInvalidClaim`, an `Amount` left at its zero value included.
+
 `XMin`, `XMax` and `XDecimals` are optional. Left at `0`, each is left out of the token and BoostX
 applies its default: `1.1`, `200` and `2` decimal places.
 

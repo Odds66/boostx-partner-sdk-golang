@@ -28,7 +28,7 @@ type GamePassParams struct {
 	Partner    string  // Partner identifier assigned by BoostX (matches gid.partner)
 	User       string  // User identifier
 	Bet        string  // Bet identifier
-	Amount     float64 // Stake amount
+	Amount     float64 // Stake amount; must be > 0
 	Currency   string  // Currency code (e.g., "USD", "EUR")
 	X          float64 // Initial coefficient (xrange.init)
 	XMin       float64 // Optional minimum coefficient; 0 = omit (defaults to 1.1)
@@ -91,7 +91,7 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 	}
 
 	// Validate numeric fields
-	if !nonNegativeFinite(params.Amount) {
+	if !nonNegativeFinite(params.Amount) || params.Amount == 0 {
 		return "", fmt.Errorf("%w: amount", ErrInvalidClaim)
 	}
 	if !nonNegativeFinite(params.X) {
