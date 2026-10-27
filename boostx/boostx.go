@@ -205,7 +205,7 @@ func NewClient(keys ClientKeyStore, opts ...client.Option) *client.Client {
 	return client.New(keys, opts...)
 }
 
-// CreateGamePassToken creates a signed GamePass JWT for testing purposes.
+// CreateGamePassToken creates a signed GamePass JWT. Call it when the player opens the game.
 func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (string, error) {
 	return tokens.CreateGamePassToken(privateKey, params)
 }
