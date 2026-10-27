@@ -162,7 +162,7 @@ publicKey, err := boostx.LoadPublicKeyFromPEM(pemBytes)
 
 ### Creating GamePass Tokens
 
-For testing, partners can create GamePass tokens:
+Create a GamePass token with `CreateGamePassToken`:
 
 **Call this when the player opens the game, not before.** BoostX accepts a GamePassJWT only within
 300 seconds of its `iat`, and only at the moment the game is opened — a URL built ahead of time and
@@ -191,7 +191,8 @@ token, err := boostx.CreateGamePassToken(privateKey, boostx.GamePassParams{
 `CreateGamePassToken` rejects it with `ErrInvalidClaim`, an `Amount` left at its zero value included.
 
 `XMin`, `XMax` and `XDecimals` are optional. Left at `0`, each is left out of the token and BoostX
-applies its default: `1.1`, `200` and `2` decimal places.
+applies its default: `1.1`, `200` and `2` decimal places. If your own limits cap X below `200`, set
+`XMax`.
 
 BoostX refuses a gamepass that starts a bet unless `X`, `XMin` and `XMax` lie within `[1.1, 200]`
 and `XMin < XMax` (compared after flooring to `XDecimals`, which must be 2–6); the SDK checks only
