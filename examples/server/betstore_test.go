@@ -76,3 +76,30 @@ func newKey(t *testing.T) *ecdsa.PrivateKey {
 	}
 	return key
 }
+
+// TestMemoryBetStore_UnknownBet pins that a round for a bet the store does not
+// hold is refused with 400 round rejected.
+func TestMemoryBetStore_UnknownBet(t *testing.T) {
+	partnerPriv := newKey(t)
+	boostxPriv := newKey(t)
+	keyStore := boostx.NewMemoryKeyStore()
+	if err := keyStore.Register(partnerA, &partnerPriv.PublicKey, partnerPriv, &boostxPriv.PublicKey); err != nil {
+		t.Fatal(err)
+	}
+	handler := boostx.NewSetBoostHandler(NewMemoryBetStore(), keyStore)
+
+	gid, err := tokens.BuildGID(partnerA, userID, "bet-unknown", partnerPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwt, err := tokens.SignJWT(map[string]any{"booster": map[string]any{"gid": gid, "round": 1, "boost": 1.2}}, boostxPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/set-boost",
+		strings.NewReader(`{"boosterJWT":"`+jwt+`"}`)))
+	if body := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusBadRequest || body != `{"error":"round rejected"}` {
+		t.Errorf("expected 400 round rejected, got %d %s", rec.Code, body)
+	}
+}

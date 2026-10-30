@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
@@ -13,9 +14,11 @@ type SetBoostHandler struct {
 	store BetStoreUpdater
 }
 
-// NewSetBoostHandler creates a new SetBoostHandler.
-func NewSetBoostHandler(store BetStoreUpdater, keys KeyStore) *SetBoostHandler {
-	return &SetBoostHandler{keys: keys, store: store}
+// NewSetBoostHandler creates a new SetBoostHandler. Panics if store or keyStore is nil.
+func NewSetBoostHandler(store BetStoreUpdater, keyStore KeyStore) *SetBoostHandler {
+	mustNotBeNil(store, "bet store")
+	mustNotBeNil(keyStore, "key store")
+	return &SetBoostHandler{keys: keyStore, store: store}
 }
 
 // setBoostRequest is the request body for POST /set-boost.
@@ -46,19 +49,27 @@ func (h *SetBoostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	partnerPubKey, err := h.keys.PartnerPublicKey(r.Context(), partner)
+	partnerPubKeys, err := partnerPublicKeys(r.Context(), h.keys, partner)
 	if err != nil {
 		writeKeyError(w, err, "partner key", partner)
 		return
 	}
 
-	booster, err := tokens.ParseBoosterToken(req.BoosterJWT, boostxPubKey, partnerPubKey)
+	booster, err := tokens.ParseBoosterTokenWithKeys(req.BoosterJWT, boostxPubKey, partnerPubKeys)
 	if err != nil {
+		if errors.Is(err, tokens.ErrInvalidPublicKey) {
+			writeError(w, http.StatusInternalServerError, "failed to verify token")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid booster token")
 		return
 	}
 
 	if err := h.store.SetBoost(r.Context(), booster); err != nil {
+		if errors.Is(err, ErrRoundRejected) {
+			writeError(w, http.StatusBadRequest, "round rejected")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to set boost")
 		return
 	}

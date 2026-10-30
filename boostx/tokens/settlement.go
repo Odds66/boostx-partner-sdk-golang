@@ -14,24 +14,13 @@ type Money struct {
 	Currency string  `json:"currency"`
 }
 
-// Settlement contains the parsed Settlement token with the extracted GID.
-type Settlement struct {
-	GID                // Embedded GID fields (Partner, User, Bet, Signature)
-	Status    string   // Bet outcome, one of the eight settlement statuses
-	Payout    Money    // Payout amount and currency
-	Version   int64    // Per-bet version, strictly increasing
-	XSettle   *float64 // Partner's own base X at settlement; nil when absent or null
-	SettledAt int64    // When the partner settled the bet, epoch milliseconds
-	RegisteredClaims
-}
-
 // SettlementParams contains the parameters for creating a Settlement token.
 type SettlementParams struct {
 	Partner  string  // Partner identifier assigned by BoostX (matches gid.partner)
-	User     string  // User identifier
-	Bet      string  // Bet identifier
+	User     string  // User identifier; must not contain ":" (not checked)
+	Bet      string  // Bet identifier; must not contain ":" (not checked)
 	Status   string  // Bet outcome: win, lose, cancelled, refund, half_win, half_lose, cashout or unsettled
-	Amount   float64 // Payout amount; 0 for a loss, and must be 0 when Status is "unsettled"
+	Amount   float64 // What reached the player, in major units of Currency; 0 for a loss, and must be 0 when Status is "unsettled"
 	Currency string  // Payout currency: 3 or 4 uppercase letters, e.g. "USD" or "USDT"
 
 	// Version orders repeated settlements of the same bet, highest wins: retry
@@ -88,6 +77,7 @@ var settlementStatuses = []string{
 }
 
 // CreateSettlementToken creates a new Settlement JWT token signed with the partner's private key.
+// After a partner key rotation, rebuild a queued token under the same Version and values, or it is answered 401.
 func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams) (string, error) {
 	if privateKey == nil {
 		return "", ErrInvalidPrivateKey

@@ -450,6 +450,7 @@ func TestCreateGamePassToken_InvalidFloatValues(t *testing.T) {
 	}{
 		{"zero amount", 0, 2.0, 1.1, 10.0},
 		{"negative amount", -100.0, 2.0, 1.1, 10.0},
+		{"zero x", 100.0, 0, 1.1, 10.0},
 		{"negative x", 100.0, -2.0, 1.1, 10.0},
 		{"negative xmin", 100.0, 2.0, -1.1, 10.0},
 		{"negative xmax", 100.0, 2.0, 1.1, -10.0},

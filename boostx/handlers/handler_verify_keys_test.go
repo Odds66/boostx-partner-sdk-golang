@@ -364,3 +364,42 @@ func TestMount_VerifyKeysRoundTrip(t *testing.T) {
 		t.Errorf("expected echoed nonce=%d, got %d", nonce, vk.Nonce)
 	}
 }
+
+// TestVerifyKeysHandler_IssIsAcceptedID pins that the store matches the
+// partner id byte for byte, so the response iss is exactly the id accepted.
+func TestVerifyKeysHandler_IssIsAcceptedID(t *testing.T) {
+	boostxPriv, boostxPub := generateTestKeyPair(t)
+	partnerPriv, partnerPub := generateTestKeyPair(t)
+	ks := keys.NewMemoryKeyStore()
+	if err := ks.Register("partner-a", partnerPub, partnerPriv, boostxPub); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewVerifyKeysHandler(ks)
+
+	requestJWT, _ := tokens.CreateVerifyKeysRequestToken(boostxPriv, "Partner-A", 1)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
+	want := `invalid verifyKeysJWT: iss-aud (unknown partner "Partner-A")`
+	if got := decodeErrorBody(t, rec.Body.Bytes()); rec.Code != http.StatusBadRequest || got != want {
+		t.Errorf("Partner-A: got %d %q, want 400 %q", rec.Code, got, want)
+	}
+
+	requestJWT, _ = tokens.CreateVerifyKeysRequestToken(boostxPriv, "partner-a", 1)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, newVerifyKeysRequest(t, requestJWT))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("partner-a: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Result verifyKeysResult `json:"result"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	var claims struct {
+		Iss string `json:"iss"`
+	}
+	if err := tokens.ExtractJWTClaims(resp.Result.ResponseJWT, &claims); err != nil || claims.Iss != "partner-a" {
+		t.Errorf("response iss: got %q, %v; want %q", claims.Iss, err, "partner-a")
+	}
+}

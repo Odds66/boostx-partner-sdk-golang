@@ -1,6 +1,8 @@
 package tokens
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"errors"
 	"testing"
 )
@@ -130,5 +132,55 @@ func TestVerifyGID_NilGID(t *testing.T) {
 	err := VerifyGID(nil, publicKey)
 	if !errors.Is(err, ErrInvalidGID) {
 		t.Errorf("expected ErrInvalidGID, got %v", err)
+	}
+}
+
+// TestVerifyGIDWithKeys pins multi-key GID verification: a GID signed with an
+// earlier partner key passes wherever that key sits in the list, unusable
+// entries are skipped, and a list with no usable key is a key error.
+func TestVerifyGIDWithKeys(t *testing.T) {
+	oldPriv, oldPub := generateTestKey(t)
+	_, newPub := generateTestKey(t)
+	p384 := &generateCurveKey(t, elliptic.P384()).PublicKey
+	gid, _ := BuildGID("partner", "user", "bet", oldPriv)
+
+	for name, keys := range map[string][]*ecdsa.PublicKey{
+		"new, old":        {newPub, oldPub},
+		"old, new":        {oldPub, newPub},
+		"nil, old":        {nil, oldPub},
+		"zero value, old": {{}, oldPub},
+		"P-384, old":      {p384, oldPub},
+	} {
+		if err := verifyGIDWithKeys(gid, keys); err != nil {
+			t.Errorf("%s: expected the GID to verify, got %v", name, err)
+		}
+	}
+
+	err := verifyGIDWithKeys(gid, []*ecdsa.PublicKey{newPub})
+	if !errors.Is(err, ErrInvalidSignature) || !errors.Is(err, ErrInvalidGID) {
+		t.Errorf("new key only: expected ErrInvalidSignature and ErrInvalidGID, got %v", err)
+	}
+
+	for name, keys := range map[string][]*ecdsa.PublicKey{
+		"nil slice":  nil,
+		"empty":      {},
+		"nil":        {nil},
+		"zero value": {{}},
+		"P-384":      {p384},
+	} {
+		if err := verifyGIDWithKeys(gid, keys); !errors.Is(err, ErrInvalidPublicKey) {
+			t.Errorf("%s: expected ErrInvalidPublicKey, got %v", name, err)
+		}
+	}
+
+	for name, sig := range map[string]string{
+		"bad base64": "!!!",
+		"63 bytes":   base64URLEncode(make([]byte, 63)),
+	} {
+		bad := *gid
+		bad.Signature = sig
+		if err := verifyGIDWithKeys(&bad, []*ecdsa.PublicKey{oldPub}); !errors.Is(err, ErrInvalidGID) {
+			t.Errorf("%s: expected ErrInvalidGID, got %v", name, err)
+		}
 	}
 }

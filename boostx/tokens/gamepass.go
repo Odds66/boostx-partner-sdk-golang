@@ -11,9 +11,9 @@ import (
 // This token is created by the Partner and sent to BoostX.
 type GamePass struct {
 	GID                // Embedded GID fields (Partner, User, Bet, Signature)
-	Amount     float64 // Stake amount
+	Amount     float64 // Stake in major units of Currency (12.5, never cents)
 	Currency   string  // Currency code (e.g., "USD", "EUR")
-	X          float64 // Initial coefficient (xrange.init)
+	X          float64 // Your own coefficient before the boost (xrange.init), never derived from a boost
 	XMin       float64 // Minimum coefficient (xrange.min); 0 = not set
 	XMax       float64 // Maximum coefficient (xrange.max); 0 = not set
 	XDecimals  int     // Decimal places for X flooring (xrange.decimals); 0 = not set
@@ -22,15 +22,17 @@ type GamePass struct {
 	RegisteredClaims
 }
 
-// GamePassParams contains the parameters for creating a GamePass token. BoostX
-// requires X, XMin and XMax in [1.1, 200] and XMin < XMax; the SDK checks only XDecimals.
+// GamePassParams contains the parameters for creating a GamePass token. On the
+// gamepass that starts a bet, BoostX requires X, XMin and XMax in [1.1, 200] and
+// XMin < XMax; the SDK checks only that X is set, that X, XMin and XMax are
+// finite and not negative, and that XDecimals is in range.
 type GamePassParams struct {
 	Partner    string  // Partner identifier assigned by BoostX (matches gid.partner)
-	User       string  // User identifier
-	Bet        string  // Bet identifier
-	Amount     float64 // Stake amount; must be > 0
+	User       string  // User identifier; must not contain ":" (not checked)
+	Bet        string  // Bet identifier; must not contain ":" (not checked)
+	Amount     float64 // Stake in major units of Currency (12.5, never cents); must be > 0
 	Currency   string  // Currency code (e.g., "USD", "EUR")
-	X          float64 // Initial coefficient (xrange.init)
+	X          float64 // Your own coefficient before the boost (xrange.init), never derived from a boost; must be > 0
 	XMin       float64 // Optional minimum coefficient; 0 = omit (defaults to 1.1)
 	XMax       float64 // Optional maximum coefficient; 0 = omit (defaults to 200)
 	XDecimals  int     // Optional decimal places for X flooring; 0 = omit (defaults to 2), valid range [2, 6]
@@ -94,7 +96,7 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 	if !nonNegativeFinite(params.Amount) || params.Amount == 0 {
 		return "", fmt.Errorf("%w: amount", ErrInvalidClaim)
 	}
-	if !nonNegativeFinite(params.X) {
+	if !nonNegativeFinite(params.X) || params.X == 0 {
 		return "", fmt.Errorf("%w: x", ErrInvalidClaim)
 	}
 	if !nonNegativeFinite(params.XMin) {
@@ -151,7 +153,7 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 
 	gp := &claims.GamePass
 	if gp.GID.Partner == "" {
-		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+		return nil, fmt.Errorf("%w: %w: gid.partner", ErrInvalidGamePass, ErrMissingClaim)
 	}
 
 	var eventTitle string
@@ -179,26 +181,26 @@ func ExtractGamePassClaims(tokenString string) (*GamePass, error) {
 // This differs from ParseBoosterToken/ParseCheckBetToken where BoostX signs the
 // JWT but the partner signed the GID, requiring two separate keys.
 func ParseGamePassToken(tokenString string, publicKey *ecdsa.PublicKey) (*GamePass, error) {
-	if publicKey == nil {
-		return nil, ErrInvalidPublicKey
+	if err := checkPublicKey(publicKey); err != nil {
+		return nil, err
 	}
 
 	var claims gamePassClaims
 	if err := ParseJWT(tokenString, &claims, publicKey); err != nil {
 		if errors.Is(err, ErrInvalidSignature) {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrInvalidGamePass, err)
 		}
 		return nil, fmt.Errorf("%w: %v", ErrInvalidGamePass, err)
 	}
 
 	gp := &claims.GamePass
 	if gp.GID.Partner == "" {
-		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+		return nil, fmt.Errorf("%w: %w: gid.partner", ErrInvalidGamePass, ErrMissingClaim)
 	}
 
 	// Verify GID signature with same key
 	if err := VerifyGID(&gp.GID, publicKey); err != nil {
-		return nil, fmt.Errorf("failed to verify GID: %w", err)
+		return nil, fmt.Errorf("%w: failed to verify GID: %w", ErrInvalidGamePass, err)
 	}
 
 	var eventTitle string

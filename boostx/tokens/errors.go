@@ -11,9 +11,10 @@ var (
 	ErrInvalidPublicKey  = errors.New("invalid ECDSA public key")
 
 	// Token errors
-	ErrInvalidGamePass   = errors.New("invalid GamePass token")
-	ErrInvalidBooster    = errors.New("invalid Booster token")
-	ErrInvalidCheckBet   = errors.New("invalid CheckBet token")
+	ErrInvalidGamePass = errors.New("invalid GamePass token")
+	ErrInvalidBooster  = errors.New("invalid Booster token")
+	ErrInvalidCheckBet = errors.New("invalid CheckBet token")
+	// Deprecated: never returned; kept so code that names it still compiles.
 	ErrInvalidSettlement = errors.New("invalid Settlement token")
 	ErrInvalidVerifyKeys = errors.New("invalid VerifyKeys token")
 	ErrInvalidGID        = errors.New("invalid GID")
@@ -32,9 +33,8 @@ var (
 )
 
 // VerifyKeys protocol reason strings returned in the HTTP error body:
-// {"error": "invalid verifyKeysJWT: <reason>"}. The set mirrors the TypeScript
-// backend's union type; callers that classify errors should use these constants
-// rather than string literals to prevent drift.
+// {"error": "invalid verifyKeysJWT: <reason>"}. Classify errors with these
+// constants rather than string literals.
 const (
 	VerifyKeysReasonShape       = "shape"
 	VerifyKeysReasonIssAud      = "iss-aud"
@@ -48,7 +48,7 @@ const (
 // anything that failed JSON-level decoding.
 func VerifyKeysReason(err error) string {
 	switch {
-	case errors.Is(err, ErrInvalidSignature):
+	case errors.Is(err, ErrInvalidSignature), errors.Is(err, ErrInvalidPublicKey):
 		return VerifyKeysReasonSignature
 	case errors.Is(err, ErrVerifyKeysIssAud):
 		return VerifyKeysReasonIssAud

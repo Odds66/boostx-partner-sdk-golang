@@ -2,19 +2,22 @@
 package keys
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
 // LoadPrivateKeyFromPEM parses an ECDSA P-256 private key from PEM-encoded data.
+// It reads the first PRIVATE KEY or EC PRIVATE KEY block, and a literal \n as a line break.
 func LoadPrivateKeyFromPEM(pemData []byte) (*ecdsa.PrivateKey, error) {
-	block, _ := pem.Decode(pemData)
+	block := pemBlock(pemData, "PRIVATE KEY", "EC PRIVATE KEY")
 	if block == nil {
 		return nil, fmt.Errorf("%w: failed to decode PEM block", tokens.ErrInvalidPrivateKey)
 	}
@@ -56,8 +59,9 @@ func LoadPrivateKeyFromFile(path string) (*ecdsa.PrivateKey, error) {
 }
 
 // LoadPublicKeyFromPEM parses an ECDSA P-256 public key from PEM-encoded data.
+// It reads the first PUBLIC KEY block, and a literal \n as a line break.
 func LoadPublicKeyFromPEM(pemData []byte) (*ecdsa.PublicKey, error) {
-	block, _ := pem.Decode(pemData)
+	block := pemBlock(pemData, "PUBLIC KEY")
 	if block == nil {
 		return nil, fmt.Errorf("%w: failed to decode PEM block", tokens.ErrInvalidPublicKey)
 	}
@@ -91,4 +95,28 @@ func LoadPublicKeyFromFile(path string) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("%w: %v", tokens.ErrInvalidPublicKey, err)
 	}
 	return LoadPublicKeyFromPEM(data)
+}
+
+// pemBlock returns the first PEM block whose type is one of types, or else the
+// first block. It drops a leading UTF-8 BOM and reads a literal \r\n or \n as a
+// line break, as keys kept in environment variables often arrive; a valid PEM
+// never contains a backslash.
+func pemBlock(data []byte, types ...string) *pem.Block {
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	data = bytes.ReplaceAll(data, []byte(`\r\n`), []byte("\n"))
+	data = bytes.ReplaceAll(data, []byte(`\n`), []byte("\n"))
+	var first *pem.Block
+	for {
+		block, rest := pem.Decode(data)
+		if block == nil {
+			return first
+		}
+		if slices.Contains(types, block.Type) {
+			return block
+		}
+		if first == nil {
+			first = block
+		}
+		data = rest
+	}
 }

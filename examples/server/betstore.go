@@ -63,7 +63,7 @@ func (s *MemoryBetStore) SetBoost(ctx context.Context, booster *boostx.Booster) 
 
 	bet, ok := s.bets[betKey{booster.Partner, booster.User, booster.Bet}]
 	if !ok {
-		return fmt.Errorf("bet not found: %s", booster.Bet)
+		return fmt.Errorf("%w: bet not found: %s", boostx.ErrRoundRejected, booster.Bet)
 	}
 	if bet.Booster != nil && booster.Round <= bet.Booster.Round {
 		return nil

@@ -2,12 +2,14 @@ package tokens
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 )
 
@@ -42,19 +44,10 @@ func SignJWT(claims any, privateKey *ecdsa.PrivateKey) (string, error) {
 	// Create signature input
 	signingInput := headerB64 + "." + payloadB64
 
-	// Sign with ECDSA
-	hash := sha256.Sum256([]byte(signingInput))
-	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
+	signature, err := signES256(privateKey, []byte(signingInput))
 	if err != nil {
-		return "", fmt.Errorf("failed to sign token: %w", err)
+		return "", err
 	}
-
-	// Encode signature as R || S (each padded to 32 bytes for P-256)
-	signature := make([]byte, 64)
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	copy(signature[32-len(rBytes):32], rBytes)
-	copy(signature[64-len(sBytes):64], sBytes)
 	signatureB64 := base64URLEncode(signature)
 
 	return signingInput + "." + signatureB64, nil
@@ -62,6 +55,9 @@ func SignJWT(claims any, privateKey *ecdsa.PrivateKey) (string, error) {
 
 // ParseJWT parses and verifies a JWT token, unmarshaling claims into the provided struct.
 func ParseJWT(tokenString string, claims any, publicKey *ecdsa.PublicKey) error {
+	if err := checkPublicKey(publicKey); err != nil {
+		return err
+	}
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
 		return fmt.Errorf("invalid token format")
@@ -94,13 +90,8 @@ func ParseJWT(tokenString string, claims any, publicKey *ecdsa.PublicKey) error 
 		return fmt.Errorf("%w: invalid signature length", ErrInvalidSignature)
 	}
 
-	signingInput := headerB64 + "." + payloadB64
-	hash := sha256.Sum256([]byte(signingInput))
-
-	r := new(big.Int).SetBytes(signature[:32])
-	s := new(big.Int).SetBytes(signature[32:])
-
-	if !ecdsa.Verify(publicKey, hash[:], r, s) {
+	hash := sha256.Sum256([]byte(headerB64 + "." + payloadB64))
+	if !verifyES256(publicKey, hash[:], signature) {
 		return ErrInvalidSignature
 	}
 
@@ -136,6 +127,44 @@ func ExtractJWTClaims(tokenString string, claims any) error {
 	}
 
 	return nil
+}
+
+// signES256 returns the ES256 signature of data as the 64-byte r || s.
+func signES256(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
+	if privateKey == nil || privateKey.Curve != elliptic.P256() {
+		return nil, fmt.Errorf("%w: not a P-256 key", ErrInvalidPrivateKey)
+	}
+	hash := sha256.Sum256(data)
+	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPrivateKey, err)
+	}
+	sig := make([]byte, 64)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	return sig, nil
+}
+
+// checkPublicKey returns ErrInvalidPublicKey for a nil key or one not on P-256.
+func checkPublicKey(publicKey *ecdsa.PublicKey) error {
+	if publicKey == nil || publicKey.Curve != elliptic.P256() {
+		return ErrInvalidPublicKey
+	}
+	return nil
+}
+
+// checkPublicKeys returns ErrInvalidPublicKey unless some key passes checkPublicKey.
+func checkPublicKeys(publicKeys []*ecdsa.PublicKey) error {
+	if slices.ContainsFunc(publicKeys, func(k *ecdsa.PublicKey) bool { return checkPublicKey(k) == nil }) {
+		return nil
+	}
+	return ErrInvalidPublicKey
+}
+
+// verifyES256 reports whether sig, a 64-byte r || s, signs the SHA-256 digest
+// with publicKey, which must have passed checkPublicKey.
+func verifyES256(publicKey *ecdsa.PublicKey, digest, sig []byte) bool {
+	return ecdsa.Verify(publicKey, digest, new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:]))
 }
 
 // base64URLEncode encodes data using base64url encoding without padding.

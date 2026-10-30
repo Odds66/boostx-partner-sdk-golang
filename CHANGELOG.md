@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.12.0
+
+### New Features
+- Verify the GID on `/set-boost` and `/check-bet` against several partner public keys, so a game started before a partner key rotation, whose GID keeps the old signature, keeps working. `MemoryKeyStore.RegisterWithPartnerPublicKeys` registers the current key first and the keys still valid for open games after it, and `PartnerPublicKeys` returns them; a custom store opts in by implementing the optional `PartnerPublicKeysStore` interface, which the handlers prefer over `KeyStore.PartnerPublicKey`. `tokens.ParseBoosterTokenWithKeys` and `ParseCheckBetTokenWithKeys` take the list directly. `KeyStore` itself is unchanged
+- Add `IsRetryable(err)` to the root `boostx` package and `boostx/client`. It reports whether a `SubmitSettlement` failure may clear when the same params are sent again: false for a `4xx` other than a `401` or a route `404`, and for `ErrMissingClaim`, `ErrInvalidClaim` and `ErrUnknownPartner`; true for anything else, key-store failures included
+- Add `ErrRoundRejected`. A `SetBoost` that returns it, for a round you have not applied and will not apply, is answered `400` `{"error":"round rejected"}`; any other error is still answered `500`
+- `WithBaseURL` takes the Settlement endpoint your dashboard shows as well as the host, and ignores surrounding whitespace and trailing slashes
+
+### Bug Fixes
+- `SubmitSettlement` returns `nil` only for BoostX's acceptance, a `2xx` whose body is `{"result":{"ok":true}}`; any other `2xx` is an `*APIError` with the message `unexpected response`. Any `2xx` used to count as delivered, an HTML page from a wrong host included
+- The settlement client follows no redirect: a `3xx` is an `*APIError`, and the `http.Client` you pass is not modified. A followed `301` turned the `POST` into a `GET` without a body, answered `404`
+- A base URL with a trailing slash no longer posts to `//api/integration/settlement`, which was answered `404`
+- A key that is `nil`, not on P-256, or cannot sign gives `ErrInvalidPrivateKey` or `ErrInvalidPublicKey` instead of a panic or a signature BoostX refuses. A key store that returns an unusable key is answered `500` `failed to verify token`, not `400`
+- `CreateGamePassToken` rejects an `X` of `0`, an `X` left unset included, with `ErrInvalidClaim`. BoostX refuses it on the gamepass that starts a bet and, on a later entry, adopts it and serves the game view-only
+- `VerifyGID` and the Booster and CheckBet parsers accept only the canonical GID signature form, 86 characters of unpadded base64url, which BoostX requires since 2026-10-30
+- `/verify-keys` compares the request's `iat` with your clock in whole seconds, as BoostX does
+- The PEM loaders skip a byte-order mark, read a literal `\n` as a line break, as environment variables often carry it, and pick the PEM block by its type, so `openssl ecparam` output with an `EC PARAMETERS` block first loads
+
+### Changes to check when you upgrade
+- Every refusal of an inbound token matches its token error (`ErrInvalidBooster`, `ErrInvalidCheckBet`, `ErrInvalidGamePass`, `ErrInvalidVerifyKeys`) and its cause with `errors.Is`, and a GID that does not verify also matches `ErrInvalidGID`. Error texts gain prefixes: compare errors with `errors.Is`, never by their text
+- `MountHandlers`, the `New*Handler` constructors and `NewClient` panic on a `nil` bet store or key store; `WithHTTPClient(nil)` keeps the default client
+- A test double for the settlement endpoint must answer `{"result":{"ok":true}}`: a bare `200` or `204` is now an `*APIError`
+- `ErrInvalidSettlement` is deprecated: nothing returns it
+
+### Improvements
+- The README states the rule for the X of a round sent again: after a re-entry that changed `X`, the new one applies, except to a `final: true` regular round sent again, which keeps the one it was first sent with
+- The README and godoc say that amounts are in major units and that `X` is your own coefficient before the boost, that `User` and `Bet` must not contain `:`, that key stores match the partner id byte for byte, that `CheckBet` answers `(false, nil)` for an unknown bet, and that the `MountHandlers` prefix is a URL path; the Quick Start checks every error, and the settlement section builds params once and queues params, not tokens
+- Pin the GID signature test vector published in the partner docs
+
 ## v0.11.2
 
 ### New Features

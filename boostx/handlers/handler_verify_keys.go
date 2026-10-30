@@ -15,9 +15,10 @@ type VerifyKeysHandler struct {
 	keys KeyStore
 }
 
-// NewVerifyKeysHandler creates a new VerifyKeysHandler.
-func NewVerifyKeysHandler(keys KeyStore) *VerifyKeysHandler {
-	return &VerifyKeysHandler{keys: keys}
+// NewVerifyKeysHandler creates a new VerifyKeysHandler. Panics if keyStore is nil.
+func NewVerifyKeysHandler(keyStore KeyStore) *VerifyKeysHandler {
+	mustNotBeNil(keyStore, "key store")
+	return &VerifyKeysHandler{keys: keyStore}
 }
 
 type verifyKeysRequest struct {
@@ -58,6 +59,10 @@ func (h *VerifyKeysHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	verified, err := tokens.ParseVerifyKeysRequestToken(req.VerifyKeysJWT, boostxPubKey, partner, 0)
 	if err != nil {
+		if errors.Is(err, tokens.ErrInvalidPublicKey) {
+			writeError(w, http.StatusInternalServerError, "failed to verify token")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid verifyKeysJWT: "+tokens.VerifyKeysReason(err))
 		return
 	}
