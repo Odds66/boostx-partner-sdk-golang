@@ -1,6 +1,8 @@
 package tokens
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"encoding/json"
 	"errors"
 	"os"
@@ -304,8 +306,8 @@ func TestBoosterToken_WireFormat(t *testing.T) {
 		t.Fatal("expected 'iat' in JWT payload")
 	}
 
-	// Verify no flat legacy fields leak through
-	for _, key := range []string{"identity", "round", "boost", "final", "jackpot"} {
+	// Verify the claims are nested, not flat
+	for _, key := range []string{"gid", "round", "boost", "final", "jackpot"} {
 		if _, ok := raw[key]; ok {
 			t.Errorf("unexpected flat key %q in JWT payload — should be nested under 'booster'", key)
 		}
@@ -328,5 +330,53 @@ func TestExtractBoosterPartner_MissingGID(t *testing.T) {
 	_, err := ExtractBoosterPartner(boosterToken)
 	if !errors.Is(err, ErrMissingClaim) {
 		t.Errorf("expected ErrMissingClaim, got %v", err)
+	}
+}
+
+// TestParseBoosterTokenWithKeys pins that a Booster whose GID was signed with
+// an earlier partner key passes when that key is in the list, and that a list
+// with no usable key is refused before the token is read.
+func TestParseBoosterTokenWithKeys(t *testing.T) {
+	oldPriv, oldPub := generateTestKey(t)
+	_, newPub := generateTestKey(t)
+	boostxPriv, boostxPub := generateTestKey(t)
+
+	gid, _ := BuildGID("partner", "user", "bet", oldPriv)
+	token, _ := SignJWT(boosterClaims{Booster: boosterPayload{GID: *gid, Round: 1, Boost: 1.5}}, boostxPriv)
+
+	booster, err := ParseBoosterTokenWithKeys(token, boostxPub, []*ecdsa.PublicKey{newPub, oldPub})
+	if err != nil || booster.Bet != "bet" {
+		t.Fatalf("new, old: got %+v, %v", booster, err)
+	}
+
+	_, err = ParseBoosterTokenWithKeys(token, boostxPub, []*ecdsa.PublicKey{newPub})
+	if !errors.Is(err, ErrInvalidBooster) || !errors.Is(err, ErrInvalidGID) || !errors.Is(err, ErrInvalidSignature) {
+		t.Errorf("new only: expected ErrInvalidBooster, ErrInvalidGID and ErrInvalidSignature, got %v", err)
+	}
+
+	p384 := &generateCurveKey(t, elliptic.P384()).PublicKey
+	for name, keys := range map[string][]*ecdsa.PublicKey{
+		"nil slice": nil, "empty": {}, "nil": {nil}, "zero value": {{}}, "P-384": {p384},
+	} {
+		if _, err := ParseBoosterTokenWithKeys("garbage", boostxPub, keys); !errors.Is(err, ErrInvalidPublicKey) {
+			t.Errorf("%s: expected ErrInvalidPublicKey, got %v", name, err)
+		}
+	}
+}
+
+// TestParseBoosterToken_CanonicalGIDSignatureOnly pins that an inbound Booster whose
+// GID signature is the same bytes in another encoding is refused, as BoostX refuses it.
+func TestParseBoosterToken_CanonicalGIDSignatureOnly(t *testing.T) {
+	partnerPriv, partnerPub := generateTestKey(t)
+	boostxPriv, boostxPub := generateTestKey(t)
+	gid, _ := BuildGID("partner", "user", "bet", partnerPriv)
+
+	padded := *gid
+	padded.Signature += "=="
+	token, _ := SignJWT(boosterClaims{Booster: boosterPayload{GID: padded, Round: 1, Boost: 1.5}}, boostxPriv)
+
+	_, err := ParseBoosterToken(token, boostxPub, partnerPub)
+	if !errors.Is(err, ErrInvalidBooster) || !errors.Is(err, ErrInvalidGID) || !errors.Is(err, ErrInvalidSignature) {
+		t.Errorf("expected ErrInvalidBooster, ErrInvalidGID and ErrInvalidSignature, got %v", err)
 	}
 }

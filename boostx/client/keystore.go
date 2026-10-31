@@ -8,7 +8,9 @@ import (
 // KeyStore provides private keys for signing outbound tokens.
 //
 // The partner argument is the BoostX-assigned partner_id (gid.partner in
-// inbound tokens); return an error for an unknown id, never a default key.
+// inbound tokens). Return an error wrapping keys.ErrUnknownPartner
+// (boostx.ErrUnknownPartner) for a partner_id you do not serve, never a
+// default key; the handlers answer it 400.
 type KeyStore interface {
 	// PartnerPrivateKey returns the partner's private key for signing tokens.
 	PartnerPrivateKey(ctx context.Context, partner string) (*ecdsa.PrivateKey, error)

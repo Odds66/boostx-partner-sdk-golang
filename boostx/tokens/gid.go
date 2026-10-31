@@ -3,12 +3,15 @@ package tokens
 import (
 	"bytes"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"math/big"
+	"regexp"
 	"unicode/utf8"
 )
+
+// canonicalSignature matches the only GID signature form BoostX accepts: 64 bytes
+// as unpadded base64url, whose last character carries no stray bits.
+var canonicalSignature = regexp.MustCompile(`^[A-Za-z0-9_-]{85}[AQgw]$`)
 
 // GID (Game ID) uniquely identifies a game session.
 // It contains three identifying fields plus a cryptographic signature
@@ -102,18 +105,10 @@ func BuildGID(partner, user, bet string, privateKey *ecdsa.PrivateKey) (*GID, er
 		return nil, fmt.Errorf("%w: bet is not valid UTF-8", ErrInvalidClaim)
 	}
 
-	hash := sha256.Sum256(canonicalGIDPayload(partner, user, bet))
-	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
+	sig, err := signES256(privateKey, canonicalGIDPayload(partner, user, bet))
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign GID: %w", err)
+		return nil, err
 	}
-
-	// Encode signature as R || S (each padded to 32 bytes for P-256)
-	sig := make([]byte, 64)
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	copy(sig[32-len(rBytes):32], rBytes)
-	copy(sig[64-len(sBytes):64], sBytes)
 
 	return &GID{
 		Partner:   partner,
@@ -123,13 +118,27 @@ func BuildGID(partner, user, bet string, privateKey *ecdsa.PrivateKey) (*GID, er
 	}, nil
 }
 
-// VerifyGID verifies the GID signature using the given public key.
+// VerifyGID verifies the GID signature using the given public key. Like BoostX,
+// it accepts only the canonical form: 86 characters of unpadded base64url.
 func VerifyGID(gid *GID, publicKey *ecdsa.PublicKey) error {
-	if publicKey == nil {
-		return ErrInvalidPublicKey
+	if err := checkPublicKey(publicKey); err != nil {
+		return err
+	}
+	return verifyGIDWithKeys(gid, []*ecdsa.PublicKey{publicKey})
+}
+
+// verifyGIDWithKeys accepts the GID when its signature is in the canonical form
+// and any of publicKeys verifies it. Unusable keys are skipped; ErrInvalidPublicKey
+// when none is usable.
+func verifyGIDWithKeys(gid *GID, publicKeys []*ecdsa.PublicKey) error {
+	if err := checkPublicKeys(publicKeys); err != nil {
+		return err
 	}
 	if gid == nil {
 		return ErrInvalidGID
+	}
+	if !canonicalSignature.MatchString(gid.Signature) {
+		return fmt.Errorf("%w: %w: signature is not canonical base64url", ErrInvalidGID, ErrInvalidSignature)
 	}
 
 	sig, err := base64URLDecode(gid.Signature)
@@ -142,12 +151,11 @@ func VerifyGID(gid *GID, publicKey *ecdsa.PublicKey) error {
 	}
 
 	hash := sha256.Sum256(canonicalGIDPayload(gid.Partner, gid.User, gid.Bet))
-	r := new(big.Int).SetBytes(sig[:32])
-	s := new(big.Int).SetBytes(sig[32:])
-
-	if !ecdsa.Verify(publicKey, hash[:], r, s) {
-		return fmt.Errorf("%w: GID signature verification failed", ErrInvalidSignature)
+	for _, k := range publicKeys {
+		if checkPublicKey(k) == nil && verifyES256(k, hash[:], sig) {
+			return nil
+		}
 	}
 
-	return nil
+	return fmt.Errorf("%w: %w: GID signature verification failed", ErrInvalidGID, ErrInvalidSignature)
 }

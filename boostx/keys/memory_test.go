@@ -5,6 +5,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -98,11 +101,69 @@ func TestMemoryKeyStore_Concurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	pubs := []*ecdsa.PublicKey{pub, pub}
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Add(2)
+		wg.Add(4)
 		go func() { defer wg.Done(); _ = store.Register("p2", pub, nil, nil) }()
+		go func() { defer wg.Done(); _ = store.RegisterWithPartnerPublicKeys("p", pubs, nil, nil) }()
 		go func() { defer wg.Done(); _, _ = store.PartnerPublicKey(context.Background(), "p") }()
+		go func() { defer wg.Done(); _, _ = store.PartnerPublicKeys(context.Background(), "p") }()
 	}
 	wg.Wait()
+}
+
+// TestMemoryKeyStore_PartnerPublicKeys pins the multi-key registration: order
+// kept, copies in and out, nil entries refused, and Register replacing the list.
+func TestMemoryKeyStore_PartnerPublicKeys(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryKeyStore()
+	_, newPub := generateTestKeyPair(t)
+	_, oldPub := generateTestKeyPair(t)
+
+	in := []*ecdsa.PublicKey{newPub, oldPub}
+	if err := store.RegisterWithPartnerPublicKeys("p", in, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	in[0] = oldPub // the store keeps its own copy
+	got, err := store.PartnerPublicKeys(ctx, "p")
+	if err != nil || !slices.Equal(got, []*ecdsa.PublicKey{newPub, oldPub}) {
+		t.Fatalf("PartnerPublicKeys: got %v, %v", got, err)
+	}
+	got[0] = oldPub // and hands out a copy
+	if again, _ := store.PartnerPublicKeys(ctx, "p"); again[0] != newPub {
+		t.Error("PartnerPublicKeys returned the stored slice, not a copy")
+	}
+	if current, _ := store.PartnerPublicKey(ctx, "p"); current != newPub {
+		t.Error("PartnerPublicKey: expected the first key")
+	}
+
+	if err := store.RegisterWithPartnerPublicKeys("p", []*ecdsa.PublicKey{newPub, nil}, nil, nil); err == nil {
+		t.Error("expected an error for a nil entry")
+	}
+	if got, _ := store.PartnerPublicKeys(ctx, "p"); len(got) != 2 {
+		t.Errorf("a refused registration changed the keys: %v", got)
+	}
+
+	for _, empty := range [][]*ecdsa.PublicKey{nil, {}} {
+		if err := store.RegisterWithPartnerPublicKeys("p", empty, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PartnerPublicKeys(ctx, "p"); err == nil || !strings.Contains(err.Error(), "no partner public key") {
+			t.Errorf("PartnerPublicKeys with %v: expected no partner public key, got %v", empty, err)
+		}
+		if _, err := store.PartnerPublicKey(ctx, "p"); err == nil || !strings.Contains(err.Error(), "no partner public key") {
+			t.Errorf("PartnerPublicKey with %v: expected no partner public key, got %v", empty, err)
+		}
+	}
+
+	if _, err := store.PartnerPublicKeys(ctx, "nope"); !errors.Is(err, ErrUnknownPartner) {
+		t.Errorf("unknown partner: expected ErrUnknownPartner, got %v", err)
+	}
+
+	_ = store.RegisterWithPartnerPublicKeys("p", []*ecdsa.PublicKey{newPub, oldPub}, nil, nil)
+	_ = store.Register("p", newPub, nil, nil) // drops oldPub
+	if got, _ := store.PartnerPublicKeys(ctx, "p"); !slices.Equal(got, []*ecdsa.PublicKey{newPub}) {
+		t.Errorf("Register: expected only the registered key, got %v", got)
+	}
 }

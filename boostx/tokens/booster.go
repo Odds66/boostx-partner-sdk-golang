@@ -67,7 +67,7 @@ func ExtractBoosterPartner(boosterToken string) (string, error) {
 	}
 	partner := claims.Booster.GID.Partner
 	if partner == "" {
-		return "", fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+		return "", fmt.Errorf("%w: %w: gid.partner", ErrInvalidBooster, ErrMissingClaim)
 	}
 	return partner, nil
 }
@@ -79,8 +79,18 @@ func ParseBoosterToken(
 	boostxPublicKey *ecdsa.PublicKey,
 	partnerPublicKey *ecdsa.PublicKey,
 ) (*Booster, error) {
-	if partnerPublicKey == nil {
-		return nil, ErrInvalidPublicKey
+	return ParseBoosterTokenWithKeys(boosterToken, boostxPublicKey, []*ecdsa.PublicKey{partnerPublicKey})
+}
+
+// ParseBoosterTokenWithKeys is ParseBoosterToken with several partner public
+// keys, the current one first: the GID passes when any of them verifies it.
+func ParseBoosterTokenWithKeys(
+	boosterToken string,
+	boostxPublicKey *ecdsa.PublicKey,
+	partnerPublicKeys []*ecdsa.PublicKey,
+) (*Booster, error) {
+	if err := checkPublicKeys(partnerPublicKeys); err != nil {
+		return nil, err
 	}
 
 	bc, err := parseBoosterClaims(boosterToken, boostxPublicKey)
@@ -90,12 +100,12 @@ func ParseBoosterToken(
 
 	gid := &bc.Booster.GID
 	if gid.Partner == "" {
-		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+		return nil, fmt.Errorf("%w: %w: gid.partner", ErrInvalidBooster, ErrMissingClaim)
 	}
 
-	// Verify GID signature with partner key
-	if err := VerifyGID(gid, partnerPublicKey); err != nil {
-		return nil, fmt.Errorf("failed to verify GID: %w", err)
+	// Verify GID signature with partner keys
+	if err := verifyGIDWithKeys(gid, partnerPublicKeys); err != nil {
+		return nil, fmt.Errorf("%w: failed to verify GID: %w", ErrInvalidBooster, err)
 	}
 
 	return &Booster{
@@ -109,14 +119,14 @@ func ParseBoosterToken(
 
 // parseBoosterClaims parses and validates a Booster JWT token from BoostX.
 func parseBoosterClaims(tokenString string, boostxPublicKey *ecdsa.PublicKey) (*boosterClaims, error) {
-	if boostxPublicKey == nil {
-		return nil, ErrInvalidPublicKey
+	if err := checkPublicKey(boostxPublicKey); err != nil {
+		return nil, err
 	}
 
 	var claims boosterClaims
 	if err := ParseJWT(tokenString, &claims, boostxPublicKey); err != nil {
 		if errors.Is(err, ErrInvalidSignature) {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrInvalidBooster, err)
 		}
 		return nil, fmt.Errorf("%w: %v", ErrInvalidBooster, err)
 	}

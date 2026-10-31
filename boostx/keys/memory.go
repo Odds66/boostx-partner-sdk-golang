@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -16,17 +17,17 @@ var ErrUnknownPartner = errors.New("unknown partner")
 // fills some roles (sign-only or verify-only); each accessor errors only if the
 // specific key it needs is absent.
 type keySet struct {
-	partnerPub  *ecdsa.PublicKey  // verifies GID signatures
-	partnerPriv *ecdsa.PrivateKey // signs the /verify-keys response and outbound tokens
-	boostxPub   *ecdsa.PublicKey  // verifies inbound Booster/CheckBet/VerifyKeys JWTs
+	partnerPubs []*ecdsa.PublicKey // verify GID signatures, the current key first
+	partnerPriv *ecdsa.PrivateKey  // signs the /verify-keys response and outbound tokens
+	boostxPub   *ecdsa.PublicKey   // verifies inbound Booster/CheckBet/VerifyKeys JWTs
 }
 
 // MemoryKeyStore is a multi-tenant key store that holds each partner_id's keys
 // in memory. It satisfies the handler and client key-store interfaces and is
 // safe for concurrent use: Register may be called while handlers serve requests
 // (partner onboarding or key rotation). For keys that live outside the process
-// (database, secret manager, KMS), implement handlers.KeyStore / client.KeyStore
-// directly instead — both are three small methods keyed on partner_id.
+// (database, secret manager, KMS), implement handlers.KeyStore (three methods)
+// and client.KeyStore (one) directly instead, keyed on partner_id.
 type MemoryKeyStore struct {
 	mu   sync.RWMutex
 	byID map[string]keySet
@@ -43,13 +44,28 @@ func NewMemoryKeyStore() *MemoryKeyStore {
 // Any key may be nil for a partner that only fills some roles (e.g. pass
 // nil, priv, nil for an outbound-signing store). All keys land atomically. Safe
 // to call concurrently with handler requests; errors if partner is empty.
+// To keep earlier partner public keys, use RegisterWithPartnerPublicKeys.
 func (s *MemoryKeyStore) Register(partner string, partnerPub *ecdsa.PublicKey, partnerPriv *ecdsa.PrivateKey, boostxPub *ecdsa.PublicKey) error {
+	var partnerPubs []*ecdsa.PublicKey
+	if partnerPub != nil {
+		partnerPubs = []*ecdsa.PublicKey{partnerPub}
+	}
+	return s.RegisterWithPartnerPublicKeys(partner, partnerPubs, partnerPriv, boostxPub)
+}
+
+// RegisterWithPartnerPublicKeys is Register with several partner public keys:
+// the current one first, then those of earlier key pairs, kept while games
+// started before a rotation still carry GIDs they signed. Errors on a nil entry.
+func (s *MemoryKeyStore) RegisterWithPartnerPublicKeys(partner string, partnerPubs []*ecdsa.PublicKey, partnerPriv *ecdsa.PrivateKey, boostxPub *ecdsa.PublicKey) error {
 	if partner == "" {
 		return errors.New("partner must not be empty")
 	}
+	if slices.Contains(partnerPubs, nil) {
+		return errors.New("partner public keys must not contain nil")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.byID[partner] = keySet{partnerPub: partnerPub, partnerPriv: partnerPriv, boostxPub: boostxPub}
+	s.byID[partner] = keySet{partnerPubs: slices.Clone(partnerPubs), partnerPriv: partnerPriv, boostxPub: boostxPub}
 	return nil
 }
 
@@ -64,16 +80,26 @@ func (s *MemoryKeyStore) lookup(partner string) (keySet, error) {
 	return set, nil
 }
 
-// PartnerPublicKey returns the partner's GID-verification public key for partner.
-func (s *MemoryKeyStore) PartnerPublicKey(_ context.Context, partner string) (*ecdsa.PublicKey, error) {
+// PartnerPublicKey returns the current partner GID-verification public key for partner.
+func (s *MemoryKeyStore) PartnerPublicKey(ctx context.Context, partner string) (*ecdsa.PublicKey, error) {
+	pubs, err := s.PartnerPublicKeys(ctx, partner)
+	if err != nil {
+		return nil, err
+	}
+	return pubs[0], nil
+}
+
+// PartnerPublicKeys returns every partner GID-verification public key for
+// partner, the current one first.
+func (s *MemoryKeyStore) PartnerPublicKeys(_ context.Context, partner string) ([]*ecdsa.PublicKey, error) {
 	set, err := s.lookup(partner)
 	if err != nil {
 		return nil, err
 	}
-	if set.partnerPub == nil {
+	if len(set.partnerPubs) == 0 {
 		return nil, fmt.Errorf("no partner public key for partner %q", partner)
 	}
-	return set.partnerPub, nil
+	return slices.Clone(set.partnerPubs), nil
 }
 
 // PartnerPrivateKey returns the partner's signing key for partner.

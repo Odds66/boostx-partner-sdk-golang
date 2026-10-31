@@ -1,6 +1,8 @@
 package tokens
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -111,9 +113,9 @@ func TestCheckBetToken_WireFormat(t *testing.T) {
 		t.Fatal("expected 'iat' in JWT payload")
 	}
 
-	// Verify no flat legacy fields leak through
-	if _, ok := raw["identity"]; ok {
-		t.Error("unexpected flat key 'identity' in JWT payload — should be nested under 'checkbet'")
+	// Verify the claims are nested, not flat
+	if _, ok := raw["gid"]; ok {
+		t.Error("unexpected flat key 'gid' in JWT payload — should be nested under 'checkbet'")
 	}
 }
 
@@ -133,5 +135,36 @@ func TestExtractCheckBetPartner(t *testing.T) {
 	}
 	if partner != "partner-123" {
 		t.Errorf("expected partner=%q, got %q", "partner-123", partner)
+	}
+}
+
+// TestParseCheckBetTokenWithKeys pins that a CheckBet whose GID was signed with
+// an earlier partner key passes when that key is in the list, and that a list
+// with no usable key is refused before the token is read.
+func TestParseCheckBetTokenWithKeys(t *testing.T) {
+	oldPriv, oldPub := generateTestKey(t)
+	_, newPub := generateTestKey(t)
+	boostxPriv, boostxPub := generateTestKey(t)
+
+	gid, _ := BuildGID("partner", "user", "bet", oldPriv)
+	token, _ := SignJWT(checkBetClaims{CheckBet: checkBetPayload{GID: *gid}}, boostxPriv)
+
+	checkBet, err := ParseCheckBetTokenWithKeys(token, boostxPub, []*ecdsa.PublicKey{newPub, oldPub})
+	if err != nil || checkBet.Bet != "bet" {
+		t.Fatalf("new, old: got %+v, %v", checkBet, err)
+	}
+
+	_, err = ParseCheckBetTokenWithKeys(token, boostxPub, []*ecdsa.PublicKey{newPub})
+	if !errors.Is(err, ErrInvalidCheckBet) || !errors.Is(err, ErrInvalidGID) || !errors.Is(err, ErrInvalidSignature) {
+		t.Errorf("new only: expected ErrInvalidCheckBet, ErrInvalidGID and ErrInvalidSignature, got %v", err)
+	}
+
+	p384 := &generateCurveKey(t, elliptic.P384()).PublicKey
+	for name, keys := range map[string][]*ecdsa.PublicKey{
+		"nil slice": nil, "empty": {}, "nil": {nil}, "zero value": {{}}, "P-384": {p384},
+	} {
+		if _, err := ParseCheckBetTokenWithKeys("garbage", boostxPub, keys); !errors.Is(err, ErrInvalidPublicKey) {
+			t.Errorf("%s: expected ErrInvalidPublicKey, got %v", name, err)
+		}
 	}
 }

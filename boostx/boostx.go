@@ -16,12 +16,14 @@ import (
 )
 
 // Key management types. MemoryKeyStore holds each partner_id's keys in memory
-// and satisfies HandlersKeyStore and ClientKeyStore; for keys that live outside
-// the process (database, secret manager), implement those interfaces directly.
+// and satisfies HandlersKeyStore, PartnerPublicKeysStore and ClientKeyStore;
+// for keys that live outside the process (database, secret manager), implement
+// those interfaces directly.
 type (
-	ClientKeyStore   = client.KeyStore
-	HandlersKeyStore = handlers.KeyStore
-	MemoryKeyStore   = keys.MemoryKeyStore
+	ClientKeyStore         = client.KeyStore
+	HandlersKeyStore       = handlers.KeyStore
+	PartnerPublicKeysStore = handlers.PartnerPublicKeysStore
+	MemoryKeyStore         = keys.MemoryKeyStore
 )
 
 // Token types: GID, the inbound result structs (Booster, CheckBet, VerifyKeys
@@ -61,15 +63,16 @@ type (
 
 // Sentinel errors for token parsing and validation. ErrUnknownPartner is the
 // one custom key stores wrap for a partner_id they do not serve; the mounted
-// handlers map it to a 400.
+// handlers map it to a 400. ErrRoundRejected is the one SetBoost returns for a
+// round it will not apply; /set-boost answers it 400.
 var (
 	ErrUnknownPartner    = keys.ErrUnknownPartner
+	ErrRoundRejected     = handlers.ErrRoundRejected
 	ErrInvalidPrivateKey = tokens.ErrInvalidPrivateKey
 	ErrInvalidPublicKey  = tokens.ErrInvalidPublicKey
 	ErrInvalidGamePass   = tokens.ErrInvalidGamePass
 	ErrInvalidBooster    = tokens.ErrInvalidBooster
 	ErrInvalidCheckBet   = tokens.ErrInvalidCheckBet
-	ErrInvalidSettlement = tokens.ErrInvalidSettlement
 	ErrInvalidVerifyKeys = tokens.ErrInvalidVerifyKeys
 	ErrVerifyKeysShape   = tokens.ErrVerifyKeysShape
 	ErrVerifyKeysIssAud  = tokens.ErrVerifyKeysIssAud
@@ -83,8 +86,10 @@ var (
 
 // MountHandlers mounts the partner-side BoostX handlers on mux under prefix:
 // POST /set-boost and POST /verify-keys always; POST /check-bet when store
-// implements BetStoreChecker. keyStore supplies each partner_id's keys — use a
-// MemoryKeyStore, or your own HandlersKeyStore implementation for external keys.
+// implements BetStoreChecker. prefix is the path of your API URL, starting
+// with "/" (or empty). keyStore supplies each partner_id's keys — use a
+// MemoryKeyStore, or your own HandlersKeyStore implementation for external
+// keys. Panics if store or keyStore is nil.
 func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, keyStore HandlersKeyStore) {
 	handlers.Mount(mux, prefix, store, keyStore)
 }
@@ -96,18 +101,19 @@ func MountHandlers(mux *http.ServeMux, prefix string, store BetStoreUpdater, key
 // POST <prefix>/verify-keys, and (when the store implements BetStoreChecker)
 // POST <prefix>/check-bet.
 
-// NewSetBoostHandler returns the POST /set-boost handler.
+// NewSetBoostHandler returns the POST /set-boost handler. Panics if store or keyStore is nil.
 func NewSetBoostHandler(store BetStoreUpdater, keyStore HandlersKeyStore) http.Handler {
 	return handlers.NewSetBoostHandler(store, keyStore)
 }
 
-// NewVerifyKeysHandler returns the POST /verify-keys handler.
+// NewVerifyKeysHandler returns the POST /verify-keys handler. Panics if keyStore is nil.
 func NewVerifyKeysHandler(keyStore HandlersKeyStore) http.Handler {
 	return handlers.NewVerifyKeysHandler(keyStore)
 }
 
 // NewCheckBetHandler returns the POST /check-bet handler. The store must
 // implement BetStoreChecker; mount this only if you accept check-bet requests.
+// Panics if store or keyStore is nil.
 func NewCheckBetHandler(store BetStoreChecker, keyStore HandlersKeyStore) http.Handler {
 	return handlers.NewCheckBetHandler(store, keyStore)
 }
@@ -160,6 +166,12 @@ func ParseBoosterToken(boosterJWT string, boostxPub, partnerPub *ecdsa.PublicKey
 	return tokens.ParseBoosterToken(boosterJWT, boostxPub, partnerPub)
 }
 
+// ParseBoosterTokenWithKeys is ParseBoosterToken with several partner public
+// keys, the current one first: the GID passes when any of them verifies it.
+func ParseBoosterTokenWithKeys(boosterJWT string, boostxPub *ecdsa.PublicKey, partnerPubs []*ecdsa.PublicKey) (*Booster, error) {
+	return tokens.ParseBoosterTokenWithKeys(boosterJWT, boostxPub, partnerPubs)
+}
+
 // ExtractBoosterPartner returns the partner_id from an inbound Booster JWT
 // without verifying it, for key lookup.
 // WARNING: Use only for key lookup. Always verify with ParseBoosterToken afterwards.
@@ -172,6 +184,12 @@ func ExtractBoosterPartner(boosterJWT string) (string, error) {
 // (partnerPub).
 func ParseCheckBetToken(checkBetJWT string, boostxPub, partnerPub *ecdsa.PublicKey) (*CheckBet, error) {
 	return tokens.ParseCheckBetToken(checkBetJWT, boostxPub, partnerPub)
+}
+
+// ParseCheckBetTokenWithKeys is ParseCheckBetToken with several partner public
+// keys, the current one first: the GID passes when any of them verifies it.
+func ParseCheckBetTokenWithKeys(checkBetJWT string, boostxPub *ecdsa.PublicKey, partnerPubs []*ecdsa.PublicKey) (*CheckBet, error) {
+	return tokens.ParseCheckBetTokenWithKeys(checkBetJWT, boostxPub, partnerPubs)
 }
 
 // ExtractCheckBetPartner returns the partner_id from an inbound CheckBet JWT
@@ -200,7 +218,7 @@ func NewMemoryKeyStore() *MemoryKeyStore {
 	return keys.NewMemoryKeyStore()
 }
 
-// NewClient creates a new BoostX API client for outbound calls.
+// NewClient creates a new BoostX API client for outbound calls. Panics if keys is nil.
 func NewClient(keys ClientKeyStore, opts ...client.Option) *client.Client {
 	return client.New(keys, opts...)
 }
@@ -210,7 +228,8 @@ func CreateGamePassToken(privateKey *ecdsa.PrivateKey, params GamePassParams) (s
 	return tokens.CreateGamePassToken(privateKey, params)
 }
 
-// CreateSettlementToken creates a signed Settlement JWT.
+// CreateSettlementToken creates a signed Settlement JWT. After a partner key
+// rotation, rebuild a queued token under the same Version and values, or it is answered 401.
 func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams) (string, error) {
 	return tokens.CreateSettlementToken(privateKey, params)
 }

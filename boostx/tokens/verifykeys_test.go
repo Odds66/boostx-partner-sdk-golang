@@ -3,6 +3,7 @@ package tokens
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -211,6 +212,62 @@ func TestParseVerifyKeysRequestToken_Stale(t *testing.T) {
 	}
 }
 
+// TestParseVerifyKeysRequestToken_SkewWindow pins the iat window: |now - iat| <=
+// maxSkew in whole seconds, with no overflow at the int64 extremes.
+func TestParseVerifyKeysRequestToken_SkewWindow(t *testing.T) {
+	privKey, pubKey := generateTestKey(t)
+	parse := func(iat int64, maxSkew time.Duration) error {
+		token, err := SignJWT(verifyKeysClaims{
+			VerifyKeys:       verifyKeysPayload{Nonce: 1},
+			Issuer:           BoostxIdentity,
+			Audience:         "partner",
+			RegisteredClaims: RegisteredClaims{IssuedAt: iat},
+		}, privKey)
+		if err != nil {
+			t.Fatalf("SignJWT failed: %v", err)
+		}
+		_, err = ParseVerifyKeysRequestToken(token, pubKey, "partner", maxSkew)
+		return err
+	}
+
+	for _, tc := range []struct {
+		name    string
+		offset  int64 // iat - now, in seconds
+		maxSkew time.Duration
+		stale   bool
+	}{
+		{"30 s past", -30, 30 * time.Second, false},
+		{"30 s ahead", 30, 30 * time.Second, false},
+		{"31 s past", -31, 30 * time.Second, true},
+		{"31 s ahead", 31, 30 * time.Second, true},
+		{"1500 ms window, 1 s past", -1, 1500 * time.Millisecond, false},
+		{"1500 ms window, 1 s ahead", 1, 1500 * time.Millisecond, false},
+		{"1500 ms window, 2 s past", -2, 1500 * time.Millisecond, true},
+		{"1500 ms window, 2 s ahead", 2, 1500 * time.Millisecond, true},
+	} {
+		for {
+			now := time.Now().Unix()
+			err := parse(now+tc.offset, tc.maxSkew)
+			if time.Now().Unix() != now {
+				continue // the second ticked during the parse; try again
+			}
+			if tc.stale && !errors.Is(err, ErrVerifyKeysStale) {
+				t.Errorf("%s: expected ErrVerifyKeysStale, got %v", tc.name, err)
+			}
+			if !tc.stale && err != nil {
+				t.Errorf("%s: expected the token to be accepted, got %v", tc.name, err)
+			}
+			break
+		}
+	}
+
+	for _, iat := range []int64{math.MinInt64, math.MaxInt64} {
+		if err := parse(iat, 0); !errors.Is(err, ErrVerifyKeysStale) {
+			t.Errorf("iat %d: expected ErrVerifyKeysStale, got %v", iat, err)
+		}
+	}
+}
+
 // TestParseVerifyKeysRequestToken_NonceFormat covers the three ways a nonce can
 // be rejected as nonce-format without a JSON-level error: zero, negative, and
 // missing (absent verifyKeys object / absent nonce key / explicit null —
@@ -338,7 +395,7 @@ func TestExtractVerifyKeysRequestPartner(t *testing.T) {
 // partner is the BoostX identity) and is rejected before any key lookup.
 func TestExtractVerifyKeysRequestPartner_RejectsBoostxAudience(t *testing.T) {
 	privKey, _ := generateTestKey(t)
-	// Hand-signed: the create wrapper now refuses to mint a "boostx" audience.
+	// Hand-signed: the create wrapper refuses to mint a "boostx" audience.
 	claims := verifyKeysClaims{
 		VerifyKeys:       verifyKeysPayload{Nonce: 1},
 		Issuer:           BoostxIdentity,

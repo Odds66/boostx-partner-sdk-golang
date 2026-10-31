@@ -131,7 +131,7 @@ func ExtractVerifyKeysRequestPartner(token string) (string, error) {
 
 // ParseVerifyKeysRequestToken parses and validates a BoostX → partner
 // verify-keys request: expects iss="boostx", aud=partnerID. Verifies the ES256
-// signature, checks iat freshness within maxSkew (defaults to 30s when zero),
+// signature, requires |now - iat| <= maxSkew in whole seconds (30 s when zero),
 // and requires a strictly positive nonce. partnerID must be non-empty and not
 // "boostx". Returns a sentinel error so callers can map to the protocol reason
 // strings via VerifyKeysReason.
@@ -156,9 +156,9 @@ func ParseVerifyKeysRequestToken(
 }
 
 // ParseVerifyKeysResponseToken parses and validates a partner → BoostX
-// verify-keys response: expects iss=partnerID, aud="boostx". Same
-// signature/freshness/nonce checks as the request path. partnerID must be
-// non-empty and not "boostx".
+// verify-keys response: expects iss=partnerID, aud="boostx". Same signature,
+// |now - iat| <= maxSkew in whole seconds (30 s when zero) and nonce checks as
+// the request path. partnerID must be non-empty and not "boostx".
 func ParseVerifyKeysResponseToken(
 	token string,
 	partnerPub *ecdsa.PublicKey,
@@ -180,9 +180,9 @@ func ParseVerifyKeysResponseToken(
 }
 
 // parseVerifyKeysToken parses and validates a verify-keys JWT:
-// verifies the ES256 signature, enforces iss/aud match, checks iat freshness
-// within maxSkew (defaults to 30s when zero), and requires a strictly positive
-// nonce. Returns a sentinel error so callers can map to the protocol reason
+// verifies the ES256 signature, enforces iss/aud match, requires
+// |now - iat| <= maxSkew in whole seconds (30 s when zero), and requires a
+// strictly positive nonce. Returns a sentinel error so callers can map to the protocol reason
 // strings (shape / iss-aud / stale / nonce-format / signature).
 func parseVerifyKeysToken(
 	token string,
@@ -190,8 +190,8 @@ func parseVerifyKeysToken(
 	expectedIssuer, expectedAudience string,
 	maxSkew time.Duration,
 ) (*verifyKeysClaims, error) {
-	if publicKey == nil {
-		return nil, ErrInvalidPublicKey
+	if err := checkPublicKey(publicKey); err != nil {
+		return nil, err
 	}
 	if maxSkew < 0 {
 		return nil, fmt.Errorf("%w: maxSkew must be >= 0", ErrInvalidClaim)
@@ -203,7 +203,7 @@ func parseVerifyKeysToken(
 	var claims verifyKeysClaims
 	if err := ParseJWT(token, &claims, publicKey); err != nil {
 		if errors.Is(err, ErrInvalidSignature) {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrInvalidVerifyKeys, err)
 		}
 		// Payload failed to decode (malformed JSON, wrong field types,
 		// numeric overflow) — treat as malformed shape.
@@ -214,14 +214,10 @@ func parseVerifyKeysToken(
 		return nil, ErrVerifyKeysIssAud
 	}
 
-	// Missing iat unmarshals as 0; time.Since(epoch) overshoots any sane skew,
-	// so a zero iat falls through the skew check as "stale" — matching the
-	// backend's behavior for iat values that are present-but-implausible.
-	skew := time.Since(time.Unix(claims.IssuedAt, 0))
-	if skew < 0 {
-		skew = -skew
-	}
-	if skew > maxSkew {
+	// |now - iat| <= maxSkew in whole seconds, compared without arithmetic on iat
+	// so no value can overflow. A missing iat unmarshals as 0 and is stale.
+	now, window := time.Now().Unix(), int64(maxSkew/time.Second)
+	if claims.IssuedAt < now-window || claims.IssuedAt > now+window {
 		return nil, ErrVerifyKeysStale
 	}
 

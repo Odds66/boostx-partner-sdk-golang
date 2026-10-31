@@ -31,7 +31,7 @@ func ExtractCheckBetPartner(checkBetToken string) (string, error) {
 	}
 	partner := claims.CheckBet.GID.Partner
 	if partner == "" {
-		return "", fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+		return "", fmt.Errorf("%w: %w: gid.partner", ErrInvalidCheckBet, ErrMissingClaim)
 	}
 	return partner, nil
 }
@@ -43,29 +43,39 @@ func ParseCheckBetToken(
 	boostxPublicKey *ecdsa.PublicKey,
 	partnerPublicKey *ecdsa.PublicKey,
 ) (*CheckBet, error) {
-	if boostxPublicKey == nil {
-		return nil, ErrInvalidPublicKey
+	return ParseCheckBetTokenWithKeys(checkBetToken, boostxPublicKey, []*ecdsa.PublicKey{partnerPublicKey})
+}
+
+// ParseCheckBetTokenWithKeys is ParseCheckBetToken with several partner public
+// keys, the current one first: the GID passes when any of them verifies it.
+func ParseCheckBetTokenWithKeys(
+	checkBetToken string,
+	boostxPublicKey *ecdsa.PublicKey,
+	partnerPublicKeys []*ecdsa.PublicKey,
+) (*CheckBet, error) {
+	if err := checkPublicKey(boostxPublicKey); err != nil {
+		return nil, err
 	}
-	if partnerPublicKey == nil {
-		return nil, ErrInvalidPublicKey
+	if err := checkPublicKeys(partnerPublicKeys); err != nil {
+		return nil, err
 	}
 
 	var claims checkBetClaims
 	if err := ParseJWT(checkBetToken, &claims, boostxPublicKey); err != nil {
 		if errors.Is(err, ErrInvalidSignature) {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrInvalidCheckBet, err)
 		}
 		return nil, fmt.Errorf("%w: %v", ErrInvalidCheckBet, err)
 	}
 
 	gid := &claims.CheckBet.GID
 	if gid.Partner == "" {
-		return nil, fmt.Errorf("%w: gid.partner", ErrMissingClaim)
+		return nil, fmt.Errorf("%w: %w: gid.partner", ErrInvalidCheckBet, ErrMissingClaim)
 	}
 
-	// Verify GID signature with partner key
-	if err := VerifyGID(gid, partnerPublicKey); err != nil {
-		return nil, fmt.Errorf("failed to verify GID: %w", err)
+	// Verify GID signature with partner keys
+	if err := verifyGIDWithKeys(gid, partnerPublicKeys); err != nil {
+		return nil, fmt.Errorf("%w: failed to verify GID: %w", ErrInvalidCheckBet, err)
 	}
 
 	return &CheckBet{

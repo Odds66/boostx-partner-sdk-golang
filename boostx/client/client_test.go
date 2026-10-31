@@ -1,14 +1,17 @@
 package client
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -150,4 +153,199 @@ func TestSubmitSettlement_ErrorResponses(t *testing.T) {
 			}
 		})
 	}
+}
+
+// acceptingServer answers BoostX's acceptance and records each request's path.
+func acceptingServer(t *testing.T, paths *[]string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*paths = append(*paths, r.URL.Path)
+		w.Write([]byte(`{"result":{"ok":true}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestSubmitSettlement_RequiresAcceptanceBody(t *testing.T) {
+	tests := []struct {
+		status  int
+		body    string
+		wantErr bool
+	}{
+		{http.StatusOK, "", true},
+		{http.StatusNoContent, "", true},
+		{http.StatusOK, "<html></html>", true},
+		{http.StatusOK, `{"error":"boom"}`, true},
+		{http.StatusOK, `{"result":{"ok":false}}`, true},
+		{http.StatusOK, `{"result":{"ok":"true"}}`, true},
+		{http.StatusCreated, `{"result":{"ok":true}}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d %s", tt.status, tt.body), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			err := New(testKeyStore(t), WithBaseURL(srv.URL)).SubmitSettlement(t.Context(), testSettlementParams())
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			apiErr, ok := errors.AsType[*APIError](err)
+			if !ok {
+				t.Fatalf("expected APIError, got %T: %v", err, err)
+			}
+			if apiErr.StatusCode != tt.status || apiErr.Message != "unexpected response" {
+				t.Errorf("got %d %q, want %d %q", apiErr.StatusCode, apiErr.Message, tt.status, "unexpected response")
+			}
+		})
+	}
+}
+
+func TestSubmitSettlement_BodyReadTimeout(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		w.Write([]byte(`{"result":`))
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	c := New(testKeyStore(t), WithBaseURL(srv.URL), WithHTTPClient(&http.Client{Timeout: 500 * time.Millisecond}))
+	err := c.SubmitSettlement(t.Context(), testSettlementParams())
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, ok := errors.AsType[*APIError](err); ok {
+		t.Errorf("got APIError %v, want a read error", err)
+	}
+}
+
+// keyStoreFunc adapts a function to KeyStore.
+type keyStoreFunc func(ctx context.Context, partner string) (*ecdsa.PrivateKey, error)
+
+func (f keyStoreFunc) PartnerPrivateKey(ctx context.Context, partner string) (*ecdsa.PrivateKey, error) {
+	return f(ctx, partner)
+}
+
+func TestSubmitSettlement_RefusedBeforeSending(t *testing.T) {
+	unreached := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the settlement was sent")
+	}))
+	defer unreached.Close()
+
+	errKMS := errors.New("kms timeout")
+	kmsDown := keyStoreFunc(func(context.Context, string) (*ecdsa.PrivateKey, error) {
+		return nil, errKMS
+	})
+	unknownPartner := testSettlementParams()
+	unknownPartner.Partner = "partner-2"
+	noUser := testSettlementParams()
+	noUser.User = ""
+	won := testSettlementParams()
+	won.Status = "won"
+
+	tests := []struct {
+		name   string
+		ks     KeyStore
+		params tokens.SettlementParams
+		want   error
+	}{
+		{"key store failure", kmsDown, testSettlementParams(), errKMS},
+		{"unknown partner", testKeyStore(t), unknownPartner, keys.ErrUnknownPartner},
+		{"missing user", testKeyStore(t), noUser, tokens.ErrMissingClaim},
+		{"invalid status", testKeyStore(t), won, tokens.ErrInvalidClaim},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := New(tt.ks, WithBaseURL(unreached.URL)).SubmitSettlement(t.Context(), tt.params)
+			if !errors.Is(err, tt.want) {
+				t.Errorf("got %v, want an error matching %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestSubmitSettlement_DoesNotFollowRedirects(t *testing.T) {
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		for _, custom := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%d custom=%t", code, custom), func(t *testing.T) {
+				var targetHits atomic.Int32
+				target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					targetHits.Add(1)
+					w.Write([]byte(`{"result":{"ok":true}}`))
+				}))
+				defer target.Close()
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, target.URL+r.URL.Path, code)
+				}))
+				defer srv.Close()
+
+				opts := []Option{WithBaseURL(srv.URL)}
+				if custom {
+					opts = append(opts, WithHTTPClient(&http.Client{Timeout: 5 * time.Second}))
+				}
+				c := New(testKeyStore(t), opts...)
+				err := c.SubmitSettlement(t.Context(), testSettlementParams())
+
+				apiErr, ok := errors.AsType[*APIError](err)
+				if !ok || apiErr.StatusCode != code {
+					t.Fatalf("got %v, want APIError %d", err, code)
+				}
+				if n := targetHits.Load(); n != 0 {
+					t.Errorf("redirect target saw %d requests, want 0", n)
+				}
+				if c.httpClient.CheckRedirect != nil {
+					t.Error("the caller's http.Client was modified")
+				}
+			})
+		}
+	}
+}
+
+func TestNew_BaseURLForms(t *testing.T) {
+	var paths []string
+	srv := acceptingServer(t, &paths)
+	for _, base := range []string{
+		srv.URL + "//",
+		srv.URL + "/api/integration/settlement/",
+		srv.URL + "/api/integration/settlement\n",
+	} {
+		paths = nil
+		err := New(testKeyStore(t), WithBaseURL(base)).SubmitSettlement(t.Context(), testSettlementParams())
+		if err != nil {
+			t.Errorf("%q: unexpected error: %v", base, err)
+		}
+		if len(paths) != 1 || paths[0] != "/api/integration/settlement" {
+			t.Errorf("%q: posted to %q, want [/api/integration/settlement]", base, paths)
+		}
+	}
+}
+
+func TestNew_NilArguments(t *testing.T) {
+	t.Run("nil key store panics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != "boostx: nil key store" {
+				t.Errorf("recover() = %v, want %q", r, "boostx: nil key store")
+			}
+		}()
+		New(nil)
+	})
+	t.Run("nil http client keeps the default", func(t *testing.T) {
+		var paths []string
+		srv := acceptingServer(t, &paths)
+		err := New(testKeyStore(t), WithBaseURL(srv.URL), WithHTTPClient(nil)).SubmitSettlement(t.Context(), testSettlementParams())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
