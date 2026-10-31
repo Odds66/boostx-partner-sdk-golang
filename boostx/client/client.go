@@ -5,15 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/Odds66/boostx-partner-sdk-golang/boostx/keys"
-	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
 )
 
 // DefaultBaseURL is the production BoostX partners S2S API base URL.
@@ -21,7 +17,8 @@ const DefaultBaseURL = "https://partners-s2s.boostx.cloud"
 
 // APIError is any answer other than BoostX's acceptance, 200 {"result":{"ok":true}}:
 // a 3xx (redirects are not followed), a 4xx, a 5xx, or a 2xx with another body
-// (Message "unexpected response").
+// (Message "unexpected response"). StatusCode and Message help diagnose a
+// settlement BoostX keeps refusing; they never mean it is lost.
 type APIError struct {
 	StatusCode int
 	Message    string
@@ -29,22 +26,6 @@ type APIError struct {
 
 func (e *APIError) Error() string {
 	return fmt.Sprintf("boostx api error %d: %s", e.StatusCode, e.Message)
-}
-
-// IsRetryable reports whether err from SubmitSettlement left the settlement
-// undelivered for a reason that re-sending the same params later can overcome.
-func IsRetryable(err error) bool {
-	if err == nil {
-		return false
-	}
-	if apiErr, ok := errors.AsType[*APIError](err); ok {
-		// The unknown-partner 404 is JSON "not found"; any other 404 is a route, a wrong base URL like a 3xx.
-		if apiErr.StatusCode == http.StatusNotFound {
-			return apiErr.Message != "not found"
-		}
-		return apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 || apiErr.StatusCode == http.StatusUnauthorized
-	}
-	return !errors.Is(err, tokens.ErrMissingClaim) && !errors.Is(err, tokens.ErrInvalidClaim) && !errors.Is(err, keys.ErrUnknownPartner)
 }
 
 // Client makes outbound HTTP calls to the BoostX Partner API.

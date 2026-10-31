@@ -4,7 +4,6 @@
 
 ### New Features
 - Verify the GID on `/set-boost` and `/check-bet` against several partner public keys, so a game started before a partner key rotation, whose GID keeps the old signature, keeps working. `MemoryKeyStore.RegisterWithPartnerPublicKeys` registers the current key first and the keys still valid for open games after it, and `PartnerPublicKeys` returns them; a custom store opts in by implementing the optional `PartnerPublicKeysStore` interface, which the handlers prefer over `KeyStore.PartnerPublicKey`. `tokens.ParseBoosterTokenWithKeys` and `ParseCheckBetTokenWithKeys` take the list directly. `KeyStore` itself is unchanged
-- Add `IsRetryable(err)` to the root `boostx` package and `boostx/client`. It reports whether a `SubmitSettlement` failure may clear when the same params are sent again: false for a `4xx` other than a `401` or a route `404`, and for `ErrMissingClaim`, `ErrInvalidClaim` and `ErrUnknownPartner`; true for anything else, key-store failures included
 - Add `ErrRoundRejected`. A `SetBoost` that returns it, for a round you have not applied and will not apply, is answered `400` `{"error":"round rejected"}`; any other error is still answered `500`
 - `WithBaseURL` takes the Settlement endpoint your dashboard shows as well as the host, and ignores surrounding whitespace and trailing slashes
 
@@ -22,7 +21,8 @@
 - Every refusal of an inbound token matches its token error (`ErrInvalidBooster`, `ErrInvalidCheckBet`, `ErrInvalidGamePass`, `ErrInvalidVerifyKeys`) and its cause with `errors.Is`, and a GID that does not verify also matches `ErrInvalidGID`. Error texts gain prefixes: compare errors with `errors.Is`, never by their text
 - `MountHandlers`, the `New*Handler` constructors and `NewClient` panic on a `nil` bet store or key store; `WithHTTPClient(nil)` keeps the default client
 - A test double for the settlement endpoint must answer `{"result":{"ok":true}}`: a bare `200` or `204` is now an `*APIError`
-- `ErrInvalidSettlement` is deprecated: nothing returns it
+- `ErrInvalidSettlement` is removed: nothing returned it
+- Treat every `SubmitSettlement` error as not delivered yet, whatever its status: send the same params again with a backoff, for example over 3 days, and alert if BoostX has still not accepted them. A `4xx` can come from a BoostX release that a fix undoes, and re-sending under the same `Version` is a no-op once BoostX holds it. The README's Submitting Settlements section shows the pattern and how to read each status when you diagnose an alert
 
 ### Improvements
 - The README states the rule for the X of a round sent again: after a re-entry that changed `X`, the new one applies, except to a `final: true` regular round sent again, which keeps the one it was first sent with

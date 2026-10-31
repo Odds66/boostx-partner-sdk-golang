@@ -176,8 +176,8 @@ The SDK provides typed errors:
 - `ErrRoundRejected` - Returned by your `SetBoost` for a round you will not apply; answered `400`
 - `*APIError` - A settlement was not accepted; `StatusCode` is the HTTP status of the answer
 
-`IsRetryable(err)` reports whether a `SubmitSettlement` error is worth sending
-again; see [Submitting Settlements](#submitting-settlements).
+Any `SubmitSettlement` error, whatever it is, means the settlement is not
+delivered yet; see [Submitting Settlements](#submitting-settlements).
 
 Every refusal of an inbound token matches both its token error and its cause:
 a GID signed with another key matches `ErrInvalidBooster`, `ErrInvalidGID` and
@@ -293,7 +293,7 @@ decimals, the player saw `2.27`, not the `2.28` that flooring only the result gi
 
 Use the client to sign and submit settlement tokens to BoostX. Build the
 `SettlementParams` once, when you settle the bet, and keep them with the bet, so
-that every attempt sends the same `Version` and `SettledAt`:
+that every attempt sends the same values, `Version` and `SettledAt` included:
 
 ```go
 partnerKey, _ := boostx.LoadPrivateKeyFromFile("partner_private.pem")
@@ -317,11 +317,8 @@ params := boostx.SettlementParams{
 
 // Every attempt, the first and each retry, sends the stored params.
 if err := client.SubmitSettlement(ctx, params); err != nil {
-    if boostx.IsRetryable(err) {
-        // keep params queued and try again later, with backoff
-    } else {
-        // alert: re-sending cannot succeed until the cause is fixed
-    }
+    // not delivered yet, whatever err is: keep params queued and send them
+    // again later, with backoff; err tells you what to check if it persists
 }
 ```
 
@@ -356,26 +353,36 @@ which is not the same as leaving the field out. Values below `1` are legal; the
 boost only ever applies to the part of a coefficient above `1`.
 
 `SubmitSettlement` makes one attempt and returns `nil` only for BoostX's
-acceptance, `200 {"result":{"ok":true}}`. Any other answer is an `*APIError`
-carrying its `StatusCode`: a `3xx` (redirects are never followed), a `4xx`, a
-`5xx`, or a `2xx` with another body (`Message` `unexpected response`). Retrying
-is yours: classify the error with `IsRetryable`, then queue the params and back
-off, or alert.
+acceptance, `200 {"result":{"ok":true}}`. Every other outcome means the
+settlement is not delivered yet: any HTTP status, a `4xx` included, a network
+failure or timeout, a key store error, even a value the SDK refuses before
+sending. Keep the params and send the same params again, with a backoff, until
+BoostX accepts them — for example over 3 days, after 1 minute, 5 minutes and
+30 minutes, then hourly — and alert, and contact BoostX, if the window ends
+without acceptance. Never decide from a status that a settlement is lost: a
+`4xx` can come from a BoostX release that a later fix undoes, and re-sending
+under the same `Version` is a no-op once BoostX holds the settlement (it answers
+`200` and discards the duplicate).
 
-- **Final** (`false`): a `4xx` other than `401` and the route `404` below, and a
-  settlement the SDK refuses before sending it (`ErrMissingClaim`,
-  `ErrInvalidClaim`, `ErrUnknownPartner`). Sending it again fails the same way.
-- **Retryable** (`true`): everything else, including a `401`, a `5xx`, a `3xx`,
-  a `2xx` without the acceptance body, a network or timeout error, and any
-  other key store error. A needless retry costs one request, since re-sending
-  under the same `Version` is a no-op; a wrong "final" loses the settlement.
+Any answer other than the acceptance is an `*APIError` carrying its
+`StatusCode` and `Message`: a `3xx` (redirects are never followed), a `4xx`, a
+`5xx`, or a `2xx` with another body (`Message` `unexpected response`). They tell
+you where to look when an alert fires:
+
+- `401`: the partner key pair, or the partner id.
+- `404` whose `Message` is `not found`: a partner id BoostX did not assign.
+- Any other `404`, a `3xx`, or a `2xx` without the acceptance body: the base URL.
+- `400` whose `Message` starts with `invalid-`, such as `invalid-xsettle`: that
+  field.
+- `5xx`: the BoostX side.
+
+An error that is not an `*APIError` names its cause: a value the SDK refused
+before sending (`ErrMissingClaim`, `ErrInvalidClaim`), your key store, or the
+request itself, such as a timeout.
 
 Queue the params, not a signed token: each attempt is signed with the key the
 store holds at that moment, so a retry picks up a rotated key. A `401` during a
-partner key rotation clears once the store holds the new private key. A `404`
-whose `Message` is `not found` means BoostX does not know the partner id; any
-other `404`, like a `3xx`, means a wrong base URL, and persists until you fix
-it. A `5xx` that persists: contact BoostX.
+partner key rotation clears once the store holds the new private key.
 
 The client posts to `https://partners-s2s.boostx.cloud` unless you pass
 `client.WithBaseURL` (from `boostx/client`). Give it the scheme and host,
@@ -444,9 +451,7 @@ type HandlersKeyStore interface {
 
 A custom store must treat its `partner` argument as authoritative: return an
 error (wrap `boostx.ErrUnknownPartner` to get the 400 mapping) for an id you do
-not serve, never a fixed key set regardless of the id. `IsRetryable` reports
-that error as final; without the wrap, a settlement for an id you do not serve
-is reported as retryable and retried forever. A store that ignores the
+not serve, never a fixed key set regardless of the id. A store that ignores the
 argument answers for whatever id the inbound token names — so if the
 partner id in your own configuration ever disagrees with the one BoostX
 assigned, every inbound check still passes locally and the mismatch only

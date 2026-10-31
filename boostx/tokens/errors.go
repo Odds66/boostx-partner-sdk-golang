@@ -11,11 +11,9 @@ var (
 	ErrInvalidPublicKey  = errors.New("invalid ECDSA public key")
 
 	// Token errors
-	ErrInvalidGamePass = errors.New("invalid GamePass token")
-	ErrInvalidBooster  = errors.New("invalid Booster token")
-	ErrInvalidCheckBet = errors.New("invalid CheckBet token")
-	// Deprecated: never returned; kept so code that names it still compiles.
-	ErrInvalidSettlement = errors.New("invalid Settlement token")
+	ErrInvalidGamePass   = errors.New("invalid GamePass token")
+	ErrInvalidBooster    = errors.New("invalid Booster token")
+	ErrInvalidCheckBet   = errors.New("invalid CheckBet token")
 	ErrInvalidVerifyKeys = errors.New("invalid VerifyKeys token")
 	ErrInvalidGID        = errors.New("invalid GID")
 	ErrInvalidSignature  = errors.New("invalid token signature")

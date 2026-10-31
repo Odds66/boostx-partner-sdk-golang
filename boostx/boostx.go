@@ -73,8 +73,6 @@ var (
 	ErrInvalidGamePass   = tokens.ErrInvalidGamePass
 	ErrInvalidBooster    = tokens.ErrInvalidBooster
 	ErrInvalidCheckBet   = tokens.ErrInvalidCheckBet
-	// Deprecated: never returned; kept so code that names it still compiles.
-	ErrInvalidSettlement = tokens.ErrInvalidSettlement
 	ErrInvalidVerifyKeys = tokens.ErrInvalidVerifyKeys
 	ErrVerifyKeysShape   = tokens.ErrVerifyKeysShape
 	ErrVerifyKeysIssAud  = tokens.ErrVerifyKeysIssAud
@@ -223,12 +221,6 @@ func NewMemoryKeyStore() *MemoryKeyStore {
 // NewClient creates a new BoostX API client for outbound calls. Panics if keys is nil.
 func NewClient(keys ClientKeyStore, opts ...client.Option) *client.Client {
 	return client.New(keys, opts...)
-}
-
-// IsRetryable reports whether err from SubmitSettlement left the settlement
-// undelivered for a reason that re-sending the same params later can overcome.
-func IsRetryable(err error) bool {
-	return client.IsRetryable(err)
 }
 
 // CreateGamePassToken creates a signed GamePass JWT. Call it when the player opens the game.
