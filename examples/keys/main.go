@@ -42,19 +42,6 @@ func main() {
 
 	fmt.Printf("GamePass Token:\n%s\n\n", gamePassToken)
 
-	// Verify the GamePass can be parsed
-	parsedGamePass, err := boostxtokens.ParseGamePassToken(gamePassToken, partnerPublicKey)
-	if err != nil {
-		log.Fatalf("Failed to parse GamePass: %v", err)
-	}
-	fmt.Printf("Parsed GamePass Claims:\n")
-	fmt.Printf("  Partner: %s\n", parsedGamePass.Partner)
-	fmt.Printf("  User: %s\n", parsedGamePass.User)
-	fmt.Printf("  Bet: %s\n", parsedGamePass.Bet)
-	fmt.Printf("  Amount: %.2f %s\n", parsedGamePass.Amount, parsedGamePass.Currency)
-	fmt.Printf("  X: %.2f (min: %.2f, max: %.2f, decimals: %d)\n", parsedGamePass.X, parsedGamePass.XMin, parsedGamePass.XMax, parsedGamePass.XDecimals)
-	fmt.Printf("  Demo: %t\n\n", parsedGamePass.Demo)
-
 	// === BOOSTX SIDE: Create Booster response (simulated) ===
 	fmt.Println("=== Creating Booster Response (BoostX -> Partner) ===")
 
@@ -112,7 +99,7 @@ func main() {
 		Partner:   "partner-123",
 		User:      "user-456",
 		Bet:       "bet-789",
-		Status:    "win",
+		Status:    boostx.StatusWin,
 		Amount:    150.0,
 		Currency:  "USD",
 		Version:   time.Now().UnixMilli(), // must increase per bet; a timestamp works
@@ -169,6 +156,7 @@ func createSimulatedBoosterToken(
 			Final:   final,
 			Jackpot: jackpot,
 		},
+		RegisteredClaims: boostxtokens.RegisteredClaims{IssuedAt: time.Now().Unix()},
 	}
 
 	tokenString, err := boostxtokens.SignJWT(claims, boostxPrivateKey)

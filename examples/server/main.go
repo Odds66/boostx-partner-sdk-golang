@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	go run ./examples/server/main.go
+//	go run ./examples/server
 //
 // Test with curl:
 //

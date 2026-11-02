@@ -14,29 +14,18 @@ type Money struct {
 	Currency string  `json:"currency"`
 }
 
-// Settlement contains the parsed Settlement token with the extracted GID.
-type Settlement struct {
-	GID                // Embedded GID fields (Partner, User, Bet, Signature)
-	Status    string   // Bet outcome, one of the eight settlement statuses
-	Payout    Money    // Payout amount and currency
-	Version   int64    // Per-bet version, strictly increasing
-	XSettle   *float64 // Partner's own base X at settlement; nil when absent or null
-	SettledAt int64    // When the partner settled the bet, epoch milliseconds
-	RegisteredClaims
-}
-
 // SettlementParams contains the parameters for creating a Settlement token.
 type SettlementParams struct {
 	Partner  string  // Partner identifier assigned by BoostX (matches gid.partner)
-	User     string  // User identifier
-	Bet      string  // Bet identifier
-	Status   string  // Bet outcome: win, lose, cancelled, refund, half_win, half_lose, cashout or unsettled
-	Amount   float64 // Payout amount; 0 for a loss, and must be 0 when Status is "unsettled"
+	User     string  // User identifier; must not contain ":" (not checked)
+	Bet      string  // Bet identifier; must not contain ":" (not checked)
+	Status   string  // Bet outcome, one of the Status* constants
+	Amount   float64 // What reached the player, in major units of Currency; 0 for a loss, and must be 0 when Status is StatusUnsettled. An unset Amount is sent as 0
 	Currency string  // Payout currency: 3 or 4 uppercase letters, e.g. "USD" or "USDT"
 
 	// Version orders repeated settlements of the same bet, highest wins: retry
 	// a failed call unchanged, send corrections under a strictly higher version.
-	// In [0, 2^53−1]; a millisecond timestamp works.
+	// In [0, 2^53−1]; a millisecond timestamp works. An unset Version is sent as 0.
 	Version int64
 
 	// XSettle is the partner's own base X at settlement, before the boost.
@@ -79,18 +68,28 @@ const (
 	maxSafeInteger int64 = 1<<53 - 1
 )
 
-// statusUnsettled is the one status carrying an extra rule: its payout must be 0.
-const statusUnsettled = "unsettled"
+// The settlement statuses BoostX accepts, for SettlementParams.Status.
+const (
+	StatusWin       = "win"
+	StatusLose      = "lose"
+	StatusCancelled = "cancelled"
+	StatusRefund    = "refund"
+	StatusHalfWin   = "half_win"
+	StatusHalfLose  = "half_lose"
+	StatusCashout   = "cashout"
+	StatusUnsettled = "unsettled" // its Amount must be 0
+)
 
 // settlementStatuses lists the allowed settlement status values.
 var settlementStatuses = []string{
-	"win", "lose", "cancelled", "refund", "half_win", "half_lose", "cashout", statusUnsettled,
+	StatusWin, StatusLose, StatusCancelled, StatusRefund, StatusHalfWin, StatusHalfLose, StatusCashout, StatusUnsettled,
 }
 
 // CreateSettlementToken creates a new Settlement JWT token signed with the partner's private key.
+// After a partner key rotation, rebuild a queued token under the same Version and values, or it is answered 401.
 func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams) (string, error) {
-	if privateKey == nil {
-		return "", ErrInvalidPrivateKey
+	if err := checkPrivateKey(privateKey); err != nil {
+		return "", err
 	}
 
 	// Validate required fields
@@ -109,7 +108,7 @@ func CreateSettlementToken(privateKey *ecdsa.PrivateKey, params SettlementParams
 	if !nonNegativeFinite(params.Amount) {
 		return "", fmt.Errorf("%w: amount", ErrInvalidClaim)
 	}
-	if params.Status == statusUnsettled && params.Amount != 0 {
+	if params.Status == StatusUnsettled && params.Amount != 0 {
 		return "", fmt.Errorf("%w: amount must be 0 when status is unsettled", ErrInvalidClaim)
 	}
 	if params.Currency == "" {

@@ -1,7 +1,10 @@
 package tokens
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -67,22 +70,26 @@ func TestBuildGID_NilPrivateKey(t *testing.T) {
 func TestBuildGID_MissingClaims(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 
+	// Every id is checked for presence before any is checked for UTF-8.
 	testCases := []struct {
 		name    string
 		partner string
 		user    string
 		bet     string
+		missing string
 	}{
-		{"missing partner", "", "user", "bet"},
-		{"missing user", "partner", "", "bet"},
-		{"missing bet", "partner", "user", ""},
+		{"missing partner", "", "user", "bet", "partner"},
+		{"missing user", "partner", "", "bet", "user"},
+		{"missing bet", "partner", "user", "", "bet"},
+		{"invalid partner, missing user", "id\xff", "", "bet", "user"},
+		{"invalid user, missing bet", "partner", "id\xff", "", "bet"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := BuildGID(tc.partner, tc.user, tc.bet, privateKey)
-			if !errors.Is(err, ErrMissingClaim) {
-				t.Errorf("expected ErrMissingClaim, got %v", err)
+			if !errors.Is(err, ErrMissingClaim) || !strings.HasSuffix(err.Error(), ": "+tc.missing) {
+				t.Errorf("expected ErrMissingClaim for %s, got %v", tc.missing, err)
 			}
 		})
 	}
@@ -101,6 +108,7 @@ func TestBuildGID_InvalidUTF8(t *testing.T) {
 		{"partner", bad, "user", "bet"},
 		{"user", "partner", bad, "bet"},
 		{"bet", "partner", "user", bad},
+		{"encoded surrogate", "partner", string([]byte{0xed, 0xa0, 0x80}), "bet"},
 	}
 
 	for _, tc := range testCases {
@@ -130,5 +138,59 @@ func TestVerifyGID_NilGID(t *testing.T) {
 	err := VerifyGID(nil, publicKey)
 	if !errors.Is(err, ErrInvalidGID) {
 		t.Errorf("expected ErrInvalidGID, got %v", err)
+	}
+	// The key is checked first.
+	if err := VerifyGID(nil, nil); !errors.Is(err, ErrInvalidPublicKey) || errors.Is(err, ErrInvalidGID) {
+		t.Errorf("nil GID and key: expected ErrInvalidPublicKey alone, got %v", err)
+	}
+}
+
+// TestVerifyGIDWithKeys pins multi-key GID verification: a GID signed with an
+// earlier partner key passes wherever that key sits in the list, unusable
+// entries are skipped, and a list with no usable key is a key error.
+func TestVerifyGIDWithKeys(t *testing.T) {
+	oldPriv, oldPub := generateTestKey(t)
+	_, newPub := generateTestKey(t)
+	p384 := &generateCurveKey(t, elliptic.P384()).PublicKey
+	gid, _ := BuildGID("partner", "user", "bet", oldPriv)
+
+	for name, keys := range map[string][]*ecdsa.PublicKey{
+		"new, old":        {newPub, oldPub},
+		"old, new":        {oldPub, newPub},
+		"nil, old":        {nil, oldPub},
+		"zero value, old": {{}, oldPub},
+		"P-384, old":      {p384, oldPub},
+	} {
+		if err := verifyGIDWithKeys(gid, keys); err != nil {
+			t.Errorf("%s: expected the GID to verify, got %v", name, err)
+		}
+	}
+
+	err := verifyGIDWithKeys(gid, []*ecdsa.PublicKey{newPub})
+	if !errors.Is(err, ErrInvalidSignature) || !errors.Is(err, ErrInvalidGID) {
+		t.Errorf("new key only: expected ErrInvalidSignature and ErrInvalidGID, got %v", err)
+	}
+
+	for name, keys := range map[string][]*ecdsa.PublicKey{
+		"nil slice":  nil,
+		"empty":      {},
+		"nil":        {nil},
+		"zero value": {{}},
+		"P-384":      {p384},
+	} {
+		if err := verifyGIDWithKeys(gid, keys); !errors.Is(err, ErrInvalidPublicKey) {
+			t.Errorf("%s: expected ErrInvalidPublicKey, got %v", name, err)
+		}
+	}
+
+	for name, sig := range map[string]string{
+		"bad base64": "!!!",
+		"63 bytes":   base64URLEncode(make([]byte, 63)),
+	} {
+		bad := *gid
+		bad.Signature = sig
+		if err := verifyGIDWithKeys(&bad, []*ecdsa.PublicKey{oldPub}); !errors.Is(err, ErrInvalidGID) || !errors.Is(err, ErrInvalidSignature) {
+			t.Errorf("%s: expected ErrInvalidGID and ErrInvalidSignature, got %v", name, err)
+		}
 	}
 }

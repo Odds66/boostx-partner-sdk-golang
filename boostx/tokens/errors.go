@@ -14,7 +14,6 @@ var (
 	ErrInvalidGamePass   = errors.New("invalid GamePass token")
 	ErrInvalidBooster    = errors.New("invalid Booster token")
 	ErrInvalidCheckBet   = errors.New("invalid CheckBet token")
-	ErrInvalidSettlement = errors.New("invalid Settlement token")
 	ErrInvalidVerifyKeys = errors.New("invalid VerifyKeys token")
 	ErrInvalidGID        = errors.New("invalid GID")
 	ErrInvalidSignature  = errors.New("invalid token signature")
@@ -27,14 +26,13 @@ var (
 	// reason-level match.
 	ErrVerifyKeysShape  = fmt.Errorf("%w: malformed payload shape", ErrInvalidVerifyKeys)
 	ErrVerifyKeysIssAud = fmt.Errorf("%w: iss/aud mismatch", ErrInvalidVerifyKeys)
-	ErrVerifyKeysStale  = fmt.Errorf("%w: iat outside skew window", ErrInvalidVerifyKeys)
+	ErrVerifyKeysStale  = fmt.Errorf("%w: outside its time window", ErrInvalidVerifyKeys)
 	ErrVerifyKeysNonce  = fmt.Errorf("%w: invalid nonce format", ErrInvalidVerifyKeys)
 )
 
 // VerifyKeys protocol reason strings returned in the HTTP error body:
-// {"error": "invalid verifyKeysJWT: <reason>"}. The set mirrors the TypeScript
-// backend's union type; callers that classify errors should use these constants
-// rather than string literals to prevent drift.
+// {"error": "invalid verifyKeysJWT: <reason>"}. Classify errors with these
+// constants rather than string literals.
 const (
 	VerifyKeysReasonShape       = "shape"
 	VerifyKeysReasonIssAud      = "iss-aud"
@@ -48,7 +46,7 @@ const (
 // anything that failed JSON-level decoding.
 func VerifyKeysReason(err error) string {
 	switch {
-	case errors.Is(err, ErrInvalidSignature):
+	case errors.Is(err, ErrInvalidSignature), errors.Is(err, ErrInvalidPublicKey):
 		return VerifyKeysReasonSignature
 	case errors.Is(err, ErrVerifyKeysIssAud):
 		return VerifyKeysReasonIssAud

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx"
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
@@ -33,12 +34,10 @@ func TestMemoryBetStore_Replay(t *testing.T) {
 	}
 	setBoost := func(round int, boost float64) {
 		t.Helper()
-		type payload struct {
-			GID   tokens.GID `json:"gid"`
-			Round int        `json:"round"`
-			Boost float64    `json:"boost"`
-		}
-		jwt, err := tokens.SignJWT(map[string]any{"booster": payload{*gid, round, boost}}, boostxPriv)
+		jwt, err := tokens.SignJWT(map[string]any{
+			"booster": map[string]any{"gid": gid, "round": round, "boost": boost, "final": false, "jackpot": false},
+			"iat":     time.Now().Unix(),
+		}, boostxPriv)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,4 +74,34 @@ func newKey(t *testing.T) *ecdsa.PrivateKey {
 		t.Fatal(err)
 	}
 	return key
+}
+
+// TestMemoryBetStore_UnknownBet pins that a round for a bet the store does not
+// hold is refused with 400 round rejected.
+func TestMemoryBetStore_UnknownBet(t *testing.T) {
+	partnerPriv := newKey(t)
+	boostxPriv := newKey(t)
+	keyStore := boostx.NewMemoryKeyStore()
+	if err := keyStore.Register(partnerA, &partnerPriv.PublicKey, partnerPriv, &boostxPriv.PublicKey); err != nil {
+		t.Fatal(err)
+	}
+	handler := boostx.NewSetBoostHandler(NewMemoryBetStore(), keyStore)
+
+	gid, err := tokens.BuildGID(partnerA, userID, "bet-unknown", partnerPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwt, err := tokens.SignJWT(map[string]any{
+		"booster": map[string]any{"gid": gid, "round": 1, "boost": 1.2, "final": false, "jackpot": false},
+		"iat":     time.Now().Unix(),
+	}, boostxPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/set-boost",
+		strings.NewReader(`{"boosterJWT":"`+jwt+`"}`)))
+	if body := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusBadRequest || body != `{"error":"round rejected"}` {
+		t.Errorf("expected 400 round rejected, got %d %s", rec.Code, body)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -348,8 +349,7 @@ func TestCreateGamePassToken_DemoDefault(t *testing.T) {
 }
 
 // TestParseGamePassToken_NonBooleanDemoRejected locks the wire contract that a
-// non-boolean gamepass.demo is rejected, matching the backend's strict gate
-// (commit f5e75db: `demo !== undefined && typeof demo !== 'boolean'` -> invalid).
+// non-boolean gamepass.demo is rejected.
 // Go's json.Unmarshal into a bool field errors on a string/number, so the demo
 // field never silently coerces. (Note: JSON null is the one value Go decodes to
 // false rather than rejecting, but the SDK is the signer and omitempty means it
@@ -449,7 +449,10 @@ func TestCreateGamePassToken_InvalidFloatValues(t *testing.T) {
 		xmax   float64
 	}{
 		{"zero amount", 0, 2.0, 1.1, 10.0},
+		{"amount just below 0.01", math.Nextafter(0.01, 0), 2.0, 1.1, 10.0},
+		{"tiny amount", 1e-308, 2.0, 1.1, 10.0},
 		{"negative amount", -100.0, 2.0, 1.1, 10.0},
+		{"zero x", 100.0, 0, 1.1, 10.0},
 		{"negative x", 100.0, -2.0, 1.1, 10.0},
 		{"negative xmin", 100.0, 2.0, -1.1, 10.0},
 		{"negative xmax", 100.0, 2.0, 1.1, -10.0},
@@ -546,5 +549,99 @@ func TestExtractGamePassClaims(t *testing.T) {
 	}
 	if claims.Bet != "bet-789" {
 		t.Errorf("expected bet=%q, got %q", "bet-789", claims.Bet)
+	}
+}
+
+// TestParseGamePassToken_ExactNames pins that the GamePass readers match member
+// names exactly, the last repeat winning, so a differently cased member is ignored.
+func TestParseGamePassToken_ExactNames(t *testing.T) {
+	priv, pub := generateTestKey(t)
+	gid, _ := BuildGID("partner", "user", "bet", priv)
+	token := func(payload string) string {
+		return signRaw(t, priv, `{"alg":"ES256"}`, strings.ReplaceAll(payload, "@gid", gidJSON(gid)))
+	}
+
+	got, err := ParseGamePassToken(token(`{"gamepass":{"gid":@gid,"stake":{"amount":5,"AMOUNT":7,"currency":"EUR","currency":"USD"},`+
+		`"xrange":{"init":2,"Init":3},"Demo":true},"iat":9,"IAT":10}`), pub)
+	if err != nil || got.Amount != 5 || got.Currency != "USD" || got.X != 2 || got.Demo || got.IssuedAt != 9 {
+		t.Errorf("expected amount 5 USD, X 2, no demo, iat 9; got %+v, %v", got, err)
+	}
+	for payload, want := range map[string]error{
+		`{"GamePass":{"gid":@gid},"iat":1}`:          ErrMissingClaim,
+		`{"gamepass":null,"iat":1}`:                  ErrInvalidClaim,
+		`{"gamepass":{"GID":@gid},"iat":1}`:          ErrMissingClaim,
+		`{"gamepass":{"gid":{"partner":"partner"}}}`: ErrInvalidGID,
+	} {
+		if _, err := ParseGamePassToken(token(payload), pub); !errors.Is(err, ErrInvalidGamePass) || !errors.Is(err, want) {
+			t.Errorf("%s: expected ErrInvalidGamePass and %v, got %v", payload, want, err)
+		}
+		if _, err := ExtractGamePassClaims(token(payload)); !errors.Is(err, ErrInvalidGamePass) || !errors.Is(err, want) {
+			t.Errorf("extract %s: expected ErrInvalidGamePass and %v, got %v", payload, want, err)
+		}
+	}
+}
+
+// TestCreateGamePassToken_MinimumStake pins that 0.01 is the smallest Amount accepted.
+func TestCreateGamePassToken_MinimumStake(t *testing.T) {
+	priv, _ := generateTestKey(t)
+	for _, amount := range []float64{0.01, math.Nextafter(0.01, 1), 1e308} {
+		if _, err := CreateGamePassToken(priv, GamePassParams{Partner: "p", User: "u", Bet: "b", Amount: amount, Currency: "USD", X: 2}); err != nil {
+			t.Errorf("amount %v: %v", amount, err)
+		}
+	}
+}
+
+// TestCreateGamePassToken_Currency pins the stake currency rule: 3 or 4
+// uppercase ASCII letters, sent unchanged, with no case mapping.
+func TestCreateGamePassToken_Currency(t *testing.T) {
+	priv, pub := generateTestKey(t)
+	params := GamePassParams{Partner: "p", User: "u", Bet: "b", Amount: 1, X: 2}
+	for _, currency := range []string{"USD", "USDT", "XAU", "ZZZZ"} {
+		params.Currency = currency
+		token, err := CreateGamePassToken(priv, params)
+		if err != nil {
+			t.Errorf("%q: %v", currency, err)
+			continue
+		}
+		if gp, err := ParseGamePassToken(token, pub); err != nil || gp.Currency != currency {
+			t.Errorf("%q: expected it sent unchanged, got %+v, %v", currency, gp, err)
+		}
+	}
+	for _, currency := range []string{"usd", "Usd", "usdT", "uſd", "US", "USDTX", "U$D", "US1", " USD", "USD ", "ÜSD", "ＵＳＤ"} {
+		params.Currency = currency
+		if _, err := CreateGamePassToken(priv, params); !errors.Is(err, ErrInvalidClaim) {
+			t.Errorf("%q: expected ErrInvalidClaim, got %v", currency, err)
+		}
+	}
+	params.Currency = ""
+	if _, err := CreateGamePassToken(priv, params); !errors.Is(err, ErrMissingClaim) {
+		t.Errorf("empty currency: expected ErrMissingClaim, got %v", err)
+	}
+}
+
+// TestCreateGamePassToken_CheckOrder pins that the first failing check is
+// reported: ids, currency, amount, x, the xrange options, then the ids'
+// UTF-8, so two faults give the error of the first alone.
+func TestCreateGamePassToken_CheckOrder(t *testing.T) {
+	priv, _ := generateTestKey(t)
+	valid := GamePassParams{Partner: "p", User: "u", Bet: "b", Amount: 1, Currency: "USD", X: 2}
+	steps := []func(*GamePassParams){
+		func(p *GamePassParams) { p.Bet = "" },
+		func(p *GamePassParams) { p.Currency = "usd" },
+		func(p *GamePassParams) { p.Amount = 0 },
+		func(p *GamePassParams) { p.X = 0 },
+		func(p *GamePassParams) { p.XDecimals = 9 },
+		func(p *GamePassParams) { p.User = string([]byte{0xff}) },
+	}
+	for i := range len(steps) - 1 {
+		first, both := valid, valid
+		steps[i](&first)
+		steps[i](&both)
+		steps[i+1](&both)
+		_, want := CreateGamePassToken(priv, first)
+		_, got := CreateGamePassToken(priv, both)
+		if want == nil || got == nil || got.Error() != want.Error() {
+			t.Errorf("faults %d and %d: expected %v, got %v", i, i+1, want, got)
+		}
 	}
 }

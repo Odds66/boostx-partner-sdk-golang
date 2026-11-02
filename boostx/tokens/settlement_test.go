@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -258,15 +260,58 @@ func TestCreateSettlementToken_MissingClaims(t *testing.T) {
 	}
 }
 
+// TestCreateSettlementToken_AllStatuses pins the eight exported statuses, their
+// values and order, and that each is accepted.
+// TestCreateSettlementToken_CheckOrder pins the order of the parameter checks:
+// each step fixes the first fault, and the next one is reported.
+func TestCreateSettlementToken_CheckOrder(t *testing.T) {
+	privateKey, _ := generateTestKey(t)
+	p := SettlementParams{Amount: -1, Version: -1, XSettle: new(-1.0)}
+	steps := []struct {
+		fix  func()
+		want error
+		text string
+	}{
+		{func() {}, ErrMissingClaim, "partner"},
+		{func() { p.Partner = "p\xff" }, ErrMissingClaim, "user"},
+		{func() { p.User = "u" }, ErrMissingClaim, "bet"},
+		{func() { p.Bet = "b" }, ErrInvalidClaim, "status"},
+		{func() { p.Status = StatusUnsettled }, ErrInvalidClaim, "amount"},
+		{func() { p.Amount = 5 }, ErrInvalidClaim, "unsettled"},
+		{func() { p.Amount = 0 }, ErrMissingClaim, "currency"},
+		{func() { p.Currency = "usd" }, ErrInvalidClaim, "uppercase"},
+		{func() { p.Currency = "USD" }, ErrInvalidClaim, "version"},
+		{func() { p.Version = 0 }, ErrInvalidClaim, "xsettle"},
+		{func() { p.XSettle = nil }, ErrMissingClaim, "settledAt"},
+		{func() { p.SettledAt = 1 }, ErrInvalidClaim, "settledAt"},
+		{func() { p.SettledAt = time.Now().UnixMilli() }, ErrInvalidClaim, "partner is not valid UTF-8"},
+	}
+	for i, step := range steps {
+		step.fix()
+		_, err := CreateSettlementToken(privateKey, p)
+		if !errors.Is(err, step.want) || !strings.Contains(err.Error(), step.text) {
+			t.Fatalf("step %d: expected %v naming %q, got %v", i, step.want, step.text, err)
+		}
+	}
+	p.Partner = "p"
+	if _, err := CreateSettlementToken(privateKey, p); err != nil {
+		t.Errorf("all faults fixed: unexpected error %v", err)
+	}
+}
+
 func TestCreateSettlementToken_AllStatuses(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 
-	statuses := []string{"win", "lose", "cancelled", "refund", "half_win", "half_lose", "cashout", "unsettled"}
+	statuses := []string{StatusWin, StatusLose, StatusCancelled, StatusRefund, StatusHalfWin, StatusHalfLose, StatusCashout, StatusUnsettled}
+	want := []string{"win", "lose", "cancelled", "refund", "half_win", "half_lose", "cashout", "unsettled"}
+	if !slices.Equal(statuses, want) || !slices.Equal(settlementStatuses, want) {
+		t.Fatalf("statuses = %q, accepted = %q, want %q", statuses, settlementStatuses, want)
+	}
 	for _, status := range statuses {
 		t.Run(status, func(t *testing.T) {
 			params := validSettlementParams()
 			params.Status = status
-			if status == "unsettled" {
+			if status == StatusUnsettled {
 				params.Amount = 0 // an unsettled bet must report a zero payout
 			}
 			if _, err := CreateSettlementToken(privateKey, params); err != nil {
@@ -276,8 +321,8 @@ func TestCreateSettlementToken_AllStatuses(t *testing.T) {
 	}
 }
 
-// TestCreateSettlementToken_RejectedStatuses covers the retired values — note
-// that "cancelled" survived the rename and is checked as valid above.
+// TestCreateSettlementToken_RejectedStatuses covers values that are not
+// settlement statuses, near misses in case and spelling included.
 func TestCreateSettlementToken_RejectedStatuses(t *testing.T) {
 	privateKey, _ := generateTestKey(t)
 

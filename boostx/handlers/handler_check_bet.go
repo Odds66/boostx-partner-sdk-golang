@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx/tokens"
@@ -13,14 +13,11 @@ type CheckBetHandler struct {
 	store BetStoreChecker
 }
 
-// NewCheckBetHandler creates a new CheckBetHandler.
-func NewCheckBetHandler(store BetStoreChecker, keys KeyStore) *CheckBetHandler {
-	return &CheckBetHandler{keys: keys, store: store}
-}
-
-// checkBetRequest is the request body for POST /check-bet.
-type checkBetRequest struct {
-	CheckBetJWT string `json:"checkbetJWT"`
+// NewCheckBetHandler creates a new CheckBetHandler. Panics if store or keyStore is nil.
+func NewCheckBetHandler(store BetStoreChecker, keyStore KeyStore) *CheckBetHandler {
+	mustNotBeNil(store, "bet store")
+	mustNotBeNil(keyStore, "key store")
+	return &CheckBetHandler{keys: keyStore, store: store}
 }
 
 // checkBetResponse is the response body for POST /check-bet.
@@ -30,16 +27,17 @@ type checkBetResponse struct {
 
 // ServeHTTP validates checkbetJWT and checks if bet is active.
 func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-
-	var req checkBetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if !isPost(w, r) {
+		return
+	}
+	token, ok := readToken(w, r, "checkbetJWT")
+	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	// Extract claims without verification to get key lookup params
-	partner, err := tokens.ExtractCheckBetPartner(req.CheckBetJWT)
+	partner, err := tokens.ExtractCheckBetPartner(token)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid checkbet token")
 		return
@@ -51,14 +49,18 @@ func (h *CheckBetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	partnerPubKey, err := h.keys.PartnerPublicKey(r.Context(), partner)
+	partnerPubKeys, err := partnerPublicKeys(r.Context(), h.keys, partner)
 	if err != nil {
 		writeKeyError(w, err, "partner key", partner)
 		return
 	}
 
-	checkBet, err := tokens.ParseCheckBetToken(req.CheckBetJWT, boostxPubKey, partnerPubKey)
+	checkBet, err := tokens.ParseCheckBetTokenWithKeys(token, boostxPubKey, partnerPubKeys)
 	if err != nil {
+		if errors.Is(err, tokens.ErrInvalidPublicKey) {
+			writeError(w, http.StatusInternalServerError, "failed to verify token")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid checkbet token")
 		return
 	}

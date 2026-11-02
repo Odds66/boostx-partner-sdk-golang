@@ -7,11 +7,15 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Odds66/boostx-partner-sdk-golang/boostx"
 )
@@ -83,54 +87,77 @@ func Example_handlersOnly() {
 }
 
 // Example_manual hand-writes the /verify-keys handler and selects the
-// key set by the partner_id carried in the token. The same Extract → look up
-// keys → Parse shape applies to /set-boost and /check-bet (keyed on the partner
-// from ExtractBoosterPartner / ExtractCheckBetPartner).
+// key set by the partner_id carried in the token. It answers as the SDK handler
+// does, every refusal a JSON {"error": …} that BoostX reads the reason from. The
+// same Extract → look up keys → Parse shape applies to /set-boost and
+// /check-bet (keyed on the partner from ExtractBoosterPartner /
+// ExtractCheckBetPartner).
 func Example_manual() {
 	bx := newMockBoostxServer()
 	// Typed as the interface, so the handler can reach only the public methods.
 	var keyStore boostx.HandlersKeyStore = registerPartners(bx)
 
 	verifyKeys := func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			VerifyKeysJWT string `json:"verifyKeysJWT"`
+		reply := func(status int, v any) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(v)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
+		refuse := func(status int, msg string) { reply(status, map[string]string{"error": msg}) }
+
+		// At most 64 KiB of UTF-8 holding one JSON object; the token is read
+		// under its exact name, absent or null reading as "".
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+		var body map[string]json.RawMessage
+		var token string
+		if err != nil || !utf8.Valid(raw) || json.Unmarshal(raw, &body) != nil ||
+			body["verifyKeysJWT"] != nil && json.Unmarshal(body["verifyKeysJWT"], &token) != nil {
+			refuse(http.StatusBadRequest, "invalid request body")
 			return
 		}
 		// The partner_id (the "aud" claim) selects which key set to use; this
 		// handler resolves keys through the HandlersKeyStore's public methods,
 		// just as the SDK handlers do internally.
-		partner, err := boostx.ExtractVerifyKeysRequestPartner(body.VerifyKeysJWT)
+		partner, err := boostx.ExtractVerifyKeysRequestPartner(token)
 		if err != nil {
-			http.Error(w, "invalid verifyKeysJWT: "+boostx.VerifyKeysReasonShape, http.StatusBadRequest)
+			refuse(http.StatusBadRequest, "invalid verifyKeysJWT: "+boostx.VerifyKeysReasonShape)
 			return
+		}
+		// An id the store does not serve is an iss-aud failure; any other
+		// lookup error is yours, a 500.
+		lookupFailed := func(err error, msg string) {
+			if errors.Is(err, boostx.ErrUnknownPartner) {
+				refuse(http.StatusBadRequest, fmt.Sprintf("invalid verifyKeysJWT: %s (unknown partner %q)",
+					boostx.VerifyKeysReasonIssAud, partner))
+				return
+			}
+			refuse(http.StatusInternalServerError, msg)
 		}
 		boostxPub, err := keyStore.BoostxPublicKey(r.Context(), partner)
 		if err != nil {
-			http.Error(w, "unknown partner", http.StatusNotFound)
+			lookupFailed(err, "failed to get boostx key")
 			return
 		}
-		req, err := boostx.ParseVerifyKeysRequestToken(body.VerifyKeysJWT, boostxPub, partner, 0)
+		req, err := boostx.ParseVerifyKeysRequestToken(token, boostxPub, partner, 0)
+		if errors.Is(err, boostx.ErrInvalidPublicKey) { // the stored key cannot verify
+			refuse(http.StatusInternalServerError, "failed to verify token")
+			return
+		}
 		if err != nil {
-			http.Error(w, "invalid verifyKeysJWT: "+boostx.VerifyKeysReason(err), http.StatusBadRequest)
+			refuse(http.StatusBadRequest, "invalid verifyKeysJWT: "+boostx.VerifyKeysReason(err))
 			return
 		}
 		partnerPriv, err := keyStore.PartnerPrivateKey(r.Context(), partner)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			lookupFailed(err, "failed to get partner private key")
 			return
 		}
 		respJWT, err := boostx.CreateVerifyKeysResponseToken(partnerPriv, partner, req.Nonce)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			refuse(http.StatusInternalServerError, "failed to sign response")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"result": map[string]string{"responseJWT": respJWT},
-		})
+		reply(http.StatusOK, map[string]any{"result": map[string]string{"responseJWT": respJWT}})
 	}
 
 	mux := http.NewServeMux()
@@ -146,9 +173,32 @@ func Example_manual() {
 		}
 		fmt.Printf("%s: %t\n", t.id, ok)
 	}
+
+	// Refusals: a body that is not JSON, and a request for an id not served.
+	unserved, err := boostx.CreateVerifyKeysRequestToken(newExampleKeyPair(), "partner-3", 1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, body := range []string{`{`, `{"verifyKeysJWT":"` + unserved + `"}`} {
+		resp, err := http.Post(server.URL+"/boostx/verify-keys", "application/json", strings.NewReader(body))
+		if err != nil {
+			log.Fatal(err)
+		}
+		var out struct {
+			Error string `json:"error"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&out)
+		resp.Body.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(resp.StatusCode, out.Error)
+	}
 	// Output:
 	// partner-1: true
 	// partner-2: true
+	// 400 invalid request body
+	// 400 invalid verifyKeysJWT: iss-aud (unknown partner "partner-3")
 }
 
 // Example_outbound creates a signed Settlement token for the right
@@ -164,7 +214,7 @@ func Example_outbound() {
 
 	params := boostx.SettlementParams{
 		Partner: "partner-1", User: "user-1", Bet: "bet-1",
-		Status: "win", Amount: 150, Currency: "USD",
+		Status: boostx.StatusWin, Amount: 150, Currency: "USD",
 		// XSettle: your coefficient before the boost; nil if none.
 		Version: time.Now().UnixMilli(), XSettle: new(2.5), SettledAt: time.Now().UnixMilli(),
 	}

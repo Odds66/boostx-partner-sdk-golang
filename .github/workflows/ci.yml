@@ -5,15 +5,36 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  # testdata/spec/ must be the exact vectors/ of the spec commit SPEC_VERSION pins (tag and commit).
+  spec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check testdata/spec against the pinned spec commit
+        run: |
+          tag="$(sed -n 's/^tag=//p' SPEC_VERSION)"
+          commit="$(sed -n 's/^commit=//p' SPEC_VERSION)"
+          git clone --depth 1 --branch "$tag" https://github.com/boostxinnovation/boostx-partner-sdk-spec "$RUNNER_TEMP/spec"
+          actual="$(git -C "$RUNNER_TEMP/spec" rev-parse HEAD)"
+          if [ "$actual" != "$commit" ]; then
+            echo "::error::spec tag $tag is commit $actual, SPEC_VERSION names $commit"
+            exit 1
+          fi
+          diff -r "$RUNNER_TEMP/spec/vectors" testdata/spec
+
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25', '1.26']
+        go-version: ['1.26']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
       - run: go build ./...
